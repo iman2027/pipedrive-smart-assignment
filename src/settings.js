@@ -17,20 +17,6 @@ async function getInstalledAccount(env) {
 	return row;
 }
 
-function normalizeUsers(pipedriveResponse) {
-	const users = Array.isArray(pipedriveResponse.data)
-		? pipedriveResponse.data
-		: [];
-
-	return users
-		.filter(user => user.active_flag !== false)
-		.map(user => ({
-			id: user.id,
-			name: user.name || user.email || `User ${user.id}`,
-			email: user.email || null
-		}));
-}
-
 export async function getSettingsPage() {
 	const html = `<!doctype html>
 <html lang="en">
@@ -39,6 +25,7 @@ export async function getSettingsPage() {
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<title>Smart Assignment Settings</title>
 
+	<script src="https://cdn.jsdelivr.net/npm/@pipedrive/app-extensions-sdk@0/dist/index.umd.js"></script>
 	<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 
 	<style>
@@ -58,6 +45,16 @@ export async function getSettingsPage() {
 			color: #5f6b7a;
 			margin-bottom: 24px;
 			line-height: 1.5;
+		}
+
+		.loadingBox {
+			background: #f8fafc;
+			border: 1px solid #e5e7eb;
+			border-radius: 8px;
+			padding: 12px;
+			margin-bottom: 16px;
+			color: #4b5563;
+			font-size: 14px;
 		}
 
 		table {
@@ -128,15 +125,29 @@ export async function getSettingsPage() {
 		.status.error {
 			color: #c03535;
 		}
+
+		.debug {
+			margin-top: 16px;
+			font-size: 12px;
+			color: #6b7280;
+			background: #f8fafc;
+			border: 1px solid #e5e7eb;
+			border-radius: 6px;
+			padding: 8px;
+			word-break: break-all;
+		}
 	</style>
 </head>
 <body>
-
 	<h1>Smart Assignment Settings</h1>
 
 	<div class="description">
 		Set daily deal assignment capacity for Pipedrive users.
 		The app will assign new deals only to users who still have remaining capacity today.
+	</div>
+
+	<div id="loadingBox" class="loadingBox">
+		Initializing Pipedrive settings page...
 	</div>
 
 	<table>
@@ -157,29 +168,66 @@ export async function getSettingsPage() {
 
 	<div id="status" class="status"></div>
 
+	<div id="debug" class="debug"></div>
+
 	<script>
 		let users = [];
 		let capacities = [];
+		let sdk = null;
+		let Command = null;
 
 		function setStatus(message, type) {
-			$("#status")
-				.removeClass("success error")
-				.addClass(type || "")
-				.text(message || "");
+			$("#status").removeClass("success error").addClass(type || "").text(message || "");
 		}
 
-		function buildUserOptions(selectedUserId) {
-			const selected = String(selectedUserId || "");
+		function setDebug(message) {
+			$("#debug").text(message || "");
+		}
 
-			return [
-				'<option value="">Select user</option>',
-				...users.map(user => {
-					const isSelected = String(user.id) === selected ? "selected" : "";
-					const label = user.email ? user.name + " (" + user.email + ")" : user.name;
+		function getRuntimeId() {
+			const params = new URLSearchParams(window.location.search);
 
-					return '<option value="' + user.id + '" ' + isSelected + '>' + escapeHtml(label) + '</option>';
-				})
-			].join("");
+			return (
+				params.get("id") ||
+				params.get("runtimeId") ||
+				params.get("runtime_id") ||
+				params.get("extensionId") ||
+				params.get("extension_id") ||
+				""
+			);
+		}
+
+		async function initSdk() {
+			const runtimeId = getRuntimeId();
+
+			setDebug("URL: " + window.location.href + " | runtime id: " + (runtimeId || "not found"));
+
+			if (!window.AppExtensionsSDK) {
+				throw new Error("AppExtensionsSDK was not loaded.");
+			}
+
+			if (runtimeId) {
+				sdk = await new window.AppExtensionsSDK({
+					identifier: runtimeId
+				}).initialize({
+					size: {
+						width: 900,
+						height: 700
+					}
+				});
+			} else {
+				sdk = await new window.AppExtensionsSDK().initialize({
+					size: {
+						width: 900,
+						height: 700
+					}
+				});
+			}
+
+			Command = window.AppExtensionsSDK.Command;
+
+			$("#loadingBox").text("Pipedrive settings page initialized.");
+			console.log("Pipedrive settings SDK initialized");
 		}
 
 		function escapeHtml(value) {
@@ -191,21 +239,26 @@ export async function getSettingsPage() {
 				.replaceAll("'", "&#039;");
 		}
 
+		function buildUserOptions(selectedUserId) {
+			const selected = String(selectedUserId || "");
+
+			return [
+				'<option value="">Select user</option>',
+				...users.map(user => {
+					const isSelected = String(user.id) === selected ? "selected" : "";
+					const label = user.email ? user.name + " (" + user.email + ")" : user.name;
+					return '<option value="' + user.id + '" ' + isSelected + '>' + escapeHtml(label) + '</option>';
+				})
+			].join("");
+		}
+
 		function renderRows() {
 			const rows = capacities.map(item => {
 				return \`
 					<tr>
-						<td>
-							<select class="userSelect">
-								\${buildUserOptions(item.pipedrive_user_id)}
-							</select>
-						</td>
-						<td>
-							<input class="capacityInput" type="number" min="0" step="1" value="\${item.daily_capacity || 0}">
-						</td>
-						<td>
-							<button class="danger deleteRow">Delete</button>
-						</td>
+						<td><select class="userSelect">\${buildUserOptions(item.pipedrive_user_id)}</select></td>
+						<td><input class="capacityInput" type="number" min="0" step="1" value="\${item.daily_capacity || 0}"></td>
+						<td><button class="danger deleteRow">Delete</button></td>
 					</tr>
 				\`;
 			});
@@ -251,6 +304,7 @@ export async function getSettingsPage() {
 
 			renderRows();
 			setStatus("", "");
+			$("#loadingBox").hide();
 		}
 
 		function collectRows() {
@@ -260,9 +314,7 @@ export async function getSettingsPage() {
 				const userId = Number($(this).find(".userSelect").val());
 				const dailyCapacity = Number($(this).find(".capacityInput").val());
 
-				if (!userId) {
-					return;
-				}
+				if (!userId) return;
 
 				if (Number.isNaN(dailyCapacity) || dailyCapacity < 0) {
 					throw new Error("Daily capacity must be zero or greater.");
@@ -298,6 +350,7 @@ export async function getSettingsPage() {
 
 		$(document).on("click", ".deleteRow", function () {
 			const index = $(this).closest("tr").index();
+
 			capacities.splice(index, 1);
 			renderRows();
 		});
@@ -326,24 +379,40 @@ export async function getSettingsPage() {
 
 				capacities = data.data;
 				renderRows();
-
 				setStatus("Settings saved successfully.", "success");
+
+				if (sdk && Command) {
+					try {
+						await sdk.execute(Command.SHOW_SNACKBAR, {
+							message: "Smart Assignment settings saved."
+						});
+					} catch (error) {
+						console.log("Settings snackbar failed", error);
+					}
+				}
 			} catch (error) {
 				setStatus(error.message, "error");
 			}
 		});
 
-		loadData().catch(error => {
-			setStatus(error.message, "error");
-		});
+		(async function boot() {
+			try {
+				await initSdk();
+				await loadData();
+			} catch (error) {
+				console.error(error);
+				$("#loadingBox").text("Initialization failed.");
+				setStatus(error.message, "error");
+			}
+		})();
 	</script>
-
 </body>
 </html>`;
 
 	return new Response(html, {
 		headers: {
-			"Content-Type": "text/html; charset=utf-8"
+			"Content-Type": "text/html; charset=utf-8",
+			"Cache-Control": "no-store"
 		}
 	});
 }
@@ -352,15 +421,12 @@ export async function getCapacities(env) {
 	const account = await getInstalledAccount(env);
 
 	const rows = await env.DB.prepare(`
-		SELECT
-			pipedrive_user_id,
-			user_name,
-			daily_capacity
+		SELECT pipedrive_user_id, user_name, daily_capacity, sort_order
 		FROM user_capacities
 		WHERE company_id = ?
 		AND active = 1
 		ORDER BY sort_order ASC, user_name ASC
-		`)
+	`)
 		.bind(account.company_id)
 		.all();
 
@@ -374,10 +440,7 @@ export async function saveCapacities(request, env) {
 	const account = await getInstalledAccount(env);
 	const body = await request.json();
 
-	const items = Array.isArray(body.items)
-		? body.items
-		: [];
-
+	const items = Array.isArray(body.items) ? body.items : [];
 	const seen = new Set();
 
 	for (const item of items) {
@@ -385,33 +448,24 @@ export async function saveCapacities(request, env) {
 		const capacity = Number(item.daily_capacity);
 
 		if (!userId) {
-			return Response.json(
-				{
-					success: false,
-					message: "Invalid user selected."
-				},
-				{ status: 400 }
-			);
+			return Response.json({
+				success: false,
+				message: "Invalid user selected."
+			}, { status: 400 });
 		}
 
 		if (seen.has(userId)) {
-			return Response.json(
-				{
-					success: false,
-					message: "Duplicate user selected."
-				},
-				{ status: 400 }
-			);
+			return Response.json({
+				success: false,
+				message: "Duplicate user selected."
+			}, { status: 400 });
 		}
 
 		if (!Number.isInteger(capacity) || capacity < 0) {
-			return Response.json(
-				{
-					success: false,
-					message: "Daily capacity must be zero or greater."
-				},
-				{ status: 400 }
-			);
+			return Response.json({
+				success: false,
+				message: "Daily capacity must be zero or greater."
+			}, { status: 400 });
 		}
 
 		seen.add(userId);
@@ -430,24 +484,24 @@ export async function saveCapacities(request, env) {
 		const item = items[index];
 
 		await env.DB.prepare(`
-		INSERT INTO user_capacities (
-			company_id,
-			pipedrive_user_id,
-			user_name,
-			daily_capacity,
-			sort_order,
-			active,
-			updated_at
-		)
-		VALUES (?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
-		ON CONFLICT(company_id, pipedrive_user_id)
-		DO UPDATE SET
-			user_name = excluded.user_name,
-			daily_capacity = excluded.daily_capacity,
-			sort_order = excluded.sort_order,
-			active = 1,
-			updated_at = CURRENT_TIMESTAMP
-	`)
+			INSERT INTO user_capacities (
+				company_id,
+				pipedrive_user_id,
+				user_name,
+				daily_capacity,
+				sort_order,
+				active,
+				updated_at
+			)
+			VALUES (?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
+			ON CONFLICT(company_id, pipedrive_user_id)
+			DO UPDATE SET
+				user_name = excluded.user_name,
+				daily_capacity = excluded.daily_capacity,
+				sort_order = excluded.sort_order,
+				active = 1,
+				updated_at = CURRENT_TIMESTAMP
+		`)
 			.bind(
 				account.company_id,
 				Number(item.pipedrive_user_id),
@@ -459,10 +513,7 @@ export async function saveCapacities(request, env) {
 	}
 
 	const rows = await env.DB.prepare(`
-		SELECT
-			pipedrive_user_id,
-			user_name,
-			daily_capacity
+		SELECT pipedrive_user_id, user_name, daily_capacity, sort_order
 		FROM user_capacities
 		WHERE company_id = ?
 		AND active = 1
