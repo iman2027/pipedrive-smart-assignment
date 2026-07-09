@@ -94,6 +94,8 @@ export async function getSettingsPage() {
     select, input { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #c8cdd4; border-radius: 6px; font-size: 14px; }
     input[type="checkbox"] { width: auto; }
     .pauseCell { white-space: nowrap; font-size: 13px; color: #374151; }
+    .assignedCell { white-space: nowrap; font-size: 13px; color: #374151; }
+    .assignedStrong { font-weight: 700; color: #17233c; }
     .actions { display: flex; gap: 8px; align-items: center; }
     button { border: 0; border-radius: 6px; padding: 9px 14px; cursor: pointer; font-size: 14px; }
     .primary { background: #317ae2; color: white; }
@@ -120,10 +122,11 @@ export async function getSettingsPage() {
   <table>
     <thead>
       <tr>
-        <th style="width: 46%">User</th>
-        <th style="width: 18%">Daily capacity</th>
-        <th style="width: 18%">Pause today</th>
-        <th style="width: 18%">Action</th>
+        <th style="width: 38%">User</th>
+        <th style="width: 17%">Daily capacity</th>
+        <th style="width: 17%">Assigned today</th>
+        <th style="width: 17%">Pause today</th>
+        <th style="width: 11%">Action</th>
       </tr>
     </thead>
     <tbody id="capacityRows"></tbody>
@@ -141,6 +144,7 @@ export async function getSettingsPage() {
   <script>
     let users = [];
     let capacities = [];
+    let summaryByUser = {};
     let sdk = null;
     let Command = null;
 
@@ -202,12 +206,27 @@ export async function getSettingsPage() {
       })].join('');
     }
 
+    function getAssignedTodayForUser(userId) {
+      const summaryItem = summaryByUser[Number(userId)];
+
+      if (summaryItem) {
+        return Number(summaryItem.assigned_today || 0);
+      }
+
+      const capacityItem = capacities.find(item => Number(item.pipedrive_user_id) === Number(userId));
+
+      return Number(capacityItem && capacityItem.assigned_today ? capacityItem.assigned_today : 0);
+    }
+
     function renderRows() {
       const rows = capacities.map(item => {
+        const userId = Number(item.pipedrive_user_id || 0);
+        const assignedToday = userId ? getAssignedTodayForUser(userId) : '-';
         const paused = item.paused_today || item.paused_until_date ? 'checked' : '';
         return '<tr>' +
           '<td><select class="userSelect">' + buildUserOptions(item.pipedrive_user_id) + '</select></td>' +
           '<td><input class="capacityInput" type="number" min="0" step="1" value="' + (item.daily_capacity || 0) + '"></td>' +
+          '<td class="assignedCell"><span class="assignedStrong">' + assignedToday + '</span></td>' +
           '<td class="pauseCell"><label><input class="pauseTodayInput" type="checkbox" ' + paused + '> Pause today</label></td>' +
           '<td><button class="danger deleteRow">Delete</button></td>' +
           '</tr>';
@@ -216,7 +235,16 @@ export async function getSettingsPage() {
       $('#capacityRows').html(rows.join(''));
     }
 
+    function updateSummaryByUser(summary) {
+      summaryByUser = {};
+
+      (summary.users || []).forEach(user => {
+        summaryByUser[Number(user.user_id)] = user;
+      });
+    }
+
     function renderDashboard(summary) {
+      updateSummaryByUser(summary);
       $('#metricAssigned').text(summary.total_assigned_today ?? 0);
       $('#metricRemaining').text(summary.total_remaining ?? 0);
       $('#metricFullPaused').text((summary.full_users || []).length + ' / ' + (summary.paused_users || []).length);
@@ -232,6 +260,7 @@ export async function getSettingsPage() {
       }
 
       renderDashboard(summary);
+      renderRows();
     }
 
     async function loadData() {
