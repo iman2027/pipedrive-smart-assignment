@@ -145,7 +145,7 @@ export async function updatePipedriveDealOwner(env, dealId, ownerId) {
 
 	return dealsApi.updateDeal({
 		id: Number(dealId),
-		updateDealRequest: {
+		UpdateDealRequest: {
 			owner_id: Number(ownerId)
 		}
 	});
