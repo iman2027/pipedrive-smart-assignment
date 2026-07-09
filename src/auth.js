@@ -1,3 +1,7 @@
+import {
+	setupInstalledCompany
+} from "./appSetup.js";
+
 function base64UrlToBytes(value) {
   let base64 = value.replace(/-/g, '+').replace(/_/g, '/');
   while (base64.length % 4) base64 += '=';

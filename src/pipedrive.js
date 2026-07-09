@@ -139,3 +139,117 @@ export async function updatePipedriveDealOwner(env, dealId, ownerId, companyId =
     UpdateDealRequest: { owner_id: Number(ownerId) }
   });
 }
+
+
+
+
+export async function getPipedriveDealFields(env, companyId = null) {
+	const account = await getValidAccount(env, companyId);
+
+	const response = await fetch(`${account.api_domain}/api/v1/dealFields`, {
+		method: "GET",
+		headers: {
+			"Accept": "application/json",
+			"Authorization": `Bearer ${account.access_token}`
+		}
+	});
+
+	const data = await response.json();
+
+	if (!response.ok || data.success === false) {
+		throw new Error(data.error || "Could not fetch deal fields.");
+	}
+
+	return data;
+}
+
+export async function createPipedriveDealField(env, companyId, name, fieldType) {
+	const account = await getValidAccount(env, companyId);
+
+	const response = await fetch(`${account.api_domain}/api/v1/dealFields`, {
+		method: "POST",
+		headers: {
+			"Accept": "application/json",
+			"Content-Type": "application/json",
+			"Authorization": `Bearer ${account.access_token}`
+		},
+		body: JSON.stringify({
+			name,
+			field_type: fieldType
+		})
+	});
+
+	const data = await response.json();
+
+	if (!response.ok || data.success === false) {
+		throw new Error(data.error || "Could not create deal field.");
+	}
+
+	return data;
+}
+
+export async function getPipedriveWebhooks(env, companyId = null) {
+	const account = await getValidAccount(env, companyId);
+
+	const response = await fetch(`${account.api_domain}/api/v1/webhooks`, {
+		method: "GET",
+		headers: {
+			"Accept": "application/json",
+			"Authorization": `Bearer ${account.access_token}`
+		}
+	});
+
+	const data = await response.json();
+
+	if (!response.ok || data.success === false) {
+		throw new Error(data.error || "Could not fetch webhooks.");
+	}
+
+	return data;
+}
+
+export async function createPipedriveWebhook(env, companyId, payload) {
+	const account = await getValidAccount(env, companyId);
+
+	const response = await fetch(`${account.api_domain}/api/v1/webhooks`, {
+		method: "POST",
+		headers: {
+			"Accept": "application/json",
+			"Content-Type": "application/json",
+			"Authorization": `Bearer ${account.access_token}`
+		},
+		body: JSON.stringify(payload)
+	});
+
+	const data = await response.json();
+
+	if (!response.ok || data.success === false) {
+		throw new Error(data.error || "Could not create webhook.");
+	}
+
+	return data;
+}
+
+export async function updatePipedriveDealCustomField(env, dealId, fieldKey, value, companyId = null) {
+	const account = await getValidAccount(env, companyId);
+
+	const response = await fetch(`${account.api_domain}/api/v1/deals/${Number(dealId)}`, {
+		method: "PUT",
+		headers: {
+			"Accept": "application/json",
+			"Content-Type": "application/json",
+			"Authorization": `Bearer ${account.access_token}`
+		},
+		body: JSON.stringify({
+			[fieldKey]: value
+		})
+	});
+
+	const data = await response.json();
+
+	if (!response.ok || data.success === false) {
+		throw new Error(data.error || "Could not update deal custom field.");
+	}
+
+	return data;
+}

@@ -6,6 +6,9 @@ import { handleJsonLeadScoringModal, getCustomLeadScoringPage } from './leadScor
 import { getSidebarPage } from './sidebar.js';
 import { getBitcoinJsonPanel } from './bitcoinPanel.js';
 import { requirePipedriveAuth, enforceRateLimit } from './auth.js';
+import {
+  handlePipedriveWebhook
+} from "./webhooks.js";
 
 export default {
   async fetch(request, env) {
@@ -13,7 +16,7 @@ export default {
 
     try {
       if (url.pathname === '/oauth/start') {
-        return oauthStart(env);
+        	return oauthStart(env, request);
       }
 
       if (url.pathname === '/oauth/callback') {
@@ -74,6 +77,10 @@ export default {
         const authContext = await requirePipedriveAuth(request, env);
         await enforceRateLimit(env, authContext.companyId, 'assignment-summary', 120, 60);
         return getAssignmentSummary(env, authContext);
+      }
+
+      if (url.pathname === "/webhooks/pipedrive" && request.method === "POST") {
+        return handlePipedriveWebhook(request, env);
       }
 
       return new Response('Pipedrive Smart Assignment App Running');
