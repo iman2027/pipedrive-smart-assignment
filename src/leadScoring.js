@@ -138,15 +138,17 @@ function jsonModalInitialData() {
 	});
 }
 
-function jsonModalError(message, status = 200) {
-	return Response.json(
-		{
-			error: {
-				message
-			}
-		},
-		{ status }
-	);
+function jsonModalError(message) {
+	/*
+		JSON Modal should receive a 200 response with an error object.
+		If we return 4xx/5xx after submit, Pipedrive shows its generic
+		"Something went wrong" instead of a controlled message.
+	*/
+	return Response.json({
+		error: {
+			message
+		}
+	});
 }
 
 function jsonModalSuccessMessage(assignResult, score) {
@@ -154,15 +156,16 @@ function jsonModalSuccessMessage(assignResult, score) {
 		return jsonModalError(assignResult.message || "Deal was not assigned.");
 	}
 
+	/*
+		Important:
+		For JSON Modal submit, keep the response minimal and schema-compatible.
+		Returning extra non-schema fields such as data.assigned_user can make
+		Pipedrive fail to map the response and show "Something went wrong",
+		even though the owner has already changed.
+	*/
 	return Response.json({
 		success: {
-			type: "snackbar",
 			message: `Lead score ${score}. Deal assigned to ${assignResult.assigned_user.name}.`
-		},
-		data: {
-			assigned: true,
-			score,
-			assigned_user: assignResult.assigned_user
 		}
 	});
 }
@@ -173,7 +176,7 @@ export async function handleJsonLeadScoringModal(request, env) {
 	}
 
 	if (request.method !== "POST") {
-		return jsonModalError("Method not allowed.", 405);
+		return jsonModalError("Method not allowed.");
 	}
 
 	let body = {};
@@ -380,6 +383,10 @@ export async function getCustomLeadScoringPage(request) {
 		let sdk = null;
 		let Command = null;
 
+		function delay(ms) {
+			return new Promise(resolve => setTimeout(resolve, ms));
+		}
+
 		async function initSdk() {
 			try {
 				const params = new URLSearchParams(window.location.search);
@@ -492,6 +499,12 @@ export async function getCustomLeadScoringPage(request) {
 					} catch (error) {
 						console.log("Snackbar failed", error);
 					}
+
+					/*
+						Do not close immediately. If we close right after SHOW_SNACKBAR,
+						the user often cannot see the toast.
+					*/
+					await delay(1500);
 
 					try {
 						await sdk.execute(Command.CLOSE_MODAL);
