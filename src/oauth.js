@@ -1,8 +1,10 @@
 export function oauthStart(env) {
+	const state = crypto.randomUUID();
+
 	const params = new URLSearchParams({
 		client_id: env.PIPEDRIVE_CLIENT_ID,
 		redirect_uri: 'https://app.loc.ir/oauth/callback',
-		state: crypto.randomUUID(),
+		state,
 	});
 
 	return Response.redirect('https://oauth.pipedrive.com/oauth/authorize?' + params.toString(), 302);
@@ -16,8 +18,7 @@ export async function oauthCallback(request, env) {
 	if (!code) {
 		return Response.json(
 			{
-				success: false,
-				message: 'Missing OAuth code',
+				error: 'missing_code',
 			},
 			{
 				status: 400,
@@ -25,7 +26,20 @@ export async function oauthCallback(request, env) {
 		);
 	}
 
-	// Exchange authorization code for tokens
+	// IMPORTANT:
+	// Pipedrive requires application/x-www-form-urlencoded
+
+	const body = new URLSearchParams({
+		client_id: env.PIPEDRIVE_CLIENT_ID,
+
+		client_secret: env.PIPEDRIVE_CLIENT_SECRET,
+
+		redirect_uri: 'https://app.loc.ir/oauth/callback',
+
+		code,
+
+		grant_type: 'authorization_code',
+	});
 
 	const tokenResponse = await fetch('https://oauth.pipedrive.com/oauth/token', {
 		method: 'POST',
@@ -34,108 +48,76 @@ export async function oauthCallback(request, env) {
 			'Content-Type': 'application/x-www-form-urlencoded',
 		},
 
-		body: new URLSearchParams({
-			grant_type: 'authorization_code',
-
-			client_id: env.PIPEDRIVE_CLIENT_ID,
-
-			client_secret: env.PIPEDRIVE_CLIENT_SECRET,
-
-			redirect_uri: 'https://app.loc.ir/oauth/callback',
-
-			code: code,
-		}),
+		body,
 	});
 
 	const tokenData = await tokenResponse.json();
 
-	if (!tokenData.access_token) {
-		return Response.json(
-			{
-				success: false,
-				step: 'token_exchange',
-				response: tokenData,
-			},
-			{
-				status: 400,
-			},
-		);
+	if (!tokenResponse.ok) {
+		return Response.json(tokenData, {
+			status: 400,
+		});
 	}
 
-	// Get current user + company info
+	/*
+		Get current user
+	*/
 
-	const meResponse = await fetch(
-		'https://api.pipedrive.com/v1/users/me',
-
-		{
-			headers: {
-				Authorization: `Bearer ${tokenData.access_token}`,
-			},
+	const meResponse = await fetch('https://api.pipedrive.com/v1/users/me', {
+		headers: {
+			Authorization: `Bearer ${tokenData.access_token}`,
 		},
-	);
+	});
 
 	const meData = await meResponse.json();
 
-	if (!meData.success) {
-		return Response.json(
-			{
-				success: false,
-				step: 'get_user',
-				response: meData,
-			},
-			{
-				status: 400,
-			},
-		);
+	if (!meResponse.ok) {
+		return Response.json(meData, {
+			status: 400,
+		});
 	}
 
-	const user = meData.data;
+	console.log(JSON.stringify(meData));
 
-	// Save token
+	/*
+		Save token
+	*/
 
 	await env.DB.prepare(
 		`
+INSERT INTO oauth_tokens
+(
+access_token,
+refresh_token,
+expires_at,
+user_id,
+user_name
+)
 
-	INSERT INTO oauth_tokens
-
-	(
-
-	company_id,
-
-	company_name,
-
-	access_token,
-
-	refresh_token,
-
-	expires_at
-
+VALUES
+(?,?,?,?,?)
+`,
 	)
-
-	VALUES (?,?,?,?,?)
-
-	`,
-	)
-
 		.bind(
-			user.company.id,
-
-			user.company.name,
-
 			tokenData.access_token,
 
 			tokenData.refresh_token,
 
 			Date.now() + tokenData.expires_in * 1000,
-		)
 
+			meData.data.id,
+
+			meData.data.name,
+		)
 		.run();
 
 	return Response.json({
 		success: true,
 
-		company: user.company.name,
+		user: {
+			id: meData.data.id,
 
-		user: user.name,
+			name: meData.data.name,
+		},
 	});
 }
