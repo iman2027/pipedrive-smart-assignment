@@ -14,82 +14,128 @@ export async function oauthCallback(request, env) {
 	const code = url.searchParams.get('code');
 
 	if (!code) {
-		return new Response('Missing OAuth code', {
-			status: 400,
-		});
+		return Response.json(
+			{
+				success: false,
+				message: 'Missing OAuth code',
+			},
+			{
+				status: 400,
+			},
+		);
 	}
 
-	const body = new URLSearchParams({
-		client_id: env.PIPEDRIVE_CLIENT_ID,
+	// Exchange authorization code for tokens
 
-		client_secret: env.PIPEDRIVE_CLIENT_SECRET,
-
-		redirect_uri: 'https://app.loc.ir/oauth/callback',
-
-		code: code,
-
-		grant_type: 'authorization_code',
-	});
-
-	const response = await fetch('https://oauth.pipedrive.com/oauth/token', {
+	const tokenResponse = await fetch('https://oauth.pipedrive.com/oauth/token', {
 		method: 'POST',
 
 		headers: {
 			'Content-Type': 'application/x-www-form-urlencoded',
 		},
 
-		body,
+		body: new URLSearchParams({
+			grant_type: 'authorization_code',
+
+			client_id: env.PIPEDRIVE_CLIENT_ID,
+
+			client_secret: env.PIPEDRIVE_CLIENT_SECRET,
+
+			redirect_uri: 'https://app.loc.ir/oauth/callback',
+
+			code: code,
+		}),
 	});
 
-	const data = await response.json();
+	const tokenData = await tokenResponse.json();
 
-	if (!data.access_token) {
-		return Response.json(data, {
-			status: 400,
-		});
+	if (!tokenData.access_token) {
+		return Response.json(
+			{
+				success: false,
+				step: 'token_exchange',
+				response: tokenData,
+			},
+			{
+				status: 400,
+			},
+		);
 	}
 
-	// گرفتن اطلاعات Organization و User
+	// Get current user + company info
 
-	const meResponse = await fetch('https://api.pipedrive.com/v1/users/me', {
-		headers: {
-			Authorization: `Bearer ${data.access_token}`,
+	const meResponse = await fetch(
+		'https://api.pipedrive.com/v1/users/me',
+
+		{
+			headers: {
+				Authorization: `Bearer ${tokenData.access_token}`,
+			},
 		},
-	});
+	);
 
-	const me = await meResponse.json();
+	const meData = await meResponse.json();
+
+	if (!meData.success) {
+		return Response.json(
+			{
+				success: false,
+				step: 'get_user',
+				response: meData,
+			},
+			{
+				status: 400,
+			},
+		);
+	}
+
+	const user = meData.data;
+
+	// Save token
 
 	await env.DB.prepare(
 		`
+
 	INSERT INTO oauth_tokens
+
 	(
+
 	company_id,
+
 	company_name,
+
 	access_token,
+
 	refresh_token,
+
 	expires_at
+
 	)
 
-	VALUES
-	(?,?,?,?,?)
+	VALUES (?,?,?,?,?)
+
 	`,
 	)
+
 		.bind(
-			me.data.company_id,
+			user.company.id,
 
-			me.data.company.name,
+			user.company.name,
 
-			data.access_token,
+			tokenData.access_token,
 
-			data.refresh_token,
+			tokenData.refresh_token,
 
-			Date.now() + data.expires_in * 1000,
+			Date.now() + tokenData.expires_in * 1000,
 		)
+
 		.run();
 
 	return Response.json({
 		success: true,
 
-		company: me.data.company.name,
+		company: user.company.name,
+
+		user: user.name,
 	});
 }
