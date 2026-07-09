@@ -433,24 +433,26 @@ export async function getCustomLeadScoringPage(request) {
 					throw new Error(data.message || data.error || "Deal was not assigned.");
 				}
 
-				setStatus("Assigned to " + data.assigned_user.name + ".", "success");
+setStatus("Assigned to " + data.assigned_user.name + ". Closing modal...", "success");
 
+if (sdk && Command) {
+	try {
+		await sdk.execute(Command.SHOW_SNACKBAR, {
+			message: "Deal assigned by Smart Assignment App to " + data.assigned_user.name + "."
+		});
+	} catch (error) {
+		console.log("Snackbar failed", error);
+	}
 
-				if (sdk && Command) {
-					try {
-						await sdk.execute(Command.SHOW_SNACKBAR, {
-							message: "Deal assigned by Smart Assignment App to " + data.assigned_user.name + "."
-						});
-					} catch (error) {
-						console.log("Snackbar failed", error);
-					}
+	setTimeout(async function () {
+		try {
+			await sdk.execute(Command.CLOSE_MODAL);
+		} catch (error) {
+			console.log("Close modal failed", error);
+		}
+	}, 1800);
+}
 
-					try {
-						await sdk.execute(Command.CLOSE_MODAL);
-					} catch (error) {
-						console.log("Close modal failed", error);
-					}
-				}
 
 			} catch (error) {
 				setStatus(error.message, "error");
