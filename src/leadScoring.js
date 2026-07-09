@@ -1,194 +1,194 @@
 import {
-    assignDealCore
+	assignDealCore
 } from "./assignment.js";
 
 function getFirstValue(value) {
-    if (Array.isArray(value)) {
-        return value[0];
-    }
+	if (Array.isArray(value)) {
+		return value[0];
+	}
 
-    if (value && typeof value === "object" && "value" in value) {
-        return value.value;
-    }
+	if (value && typeof value === "object" && "value" in value) {
+		return value.value;
+	}
 
-    return value;
+	return value;
 }
 
 function getBlockValue(body, key) {
-    const blocks =
-        body &&
-            body.data &&
-            body.data.blocks
-            ? body.data.blocks
-            : body.blocks || {};
+	const blocks =
+		body &&
+		body.data &&
+		body.data.blocks
+			? body.data.blocks
+			: body.blocks || {};
 
-    const block = blocks[key];
+	const block = blocks[key];
 
-    if (!block) {
-        return null;
-    }
+	if (!block) {
+		return null;
+	}
 
-    return getFirstValue(block.value);
+	return getFirstValue(block.value);
 }
 
 function calculateLeadScore({ urgency, budget, decisionMaker }) {
-    let score = 0;
+	let score = 0;
 
-    if (urgency === "cold") score += 10;
-    if (urgency === "warm") score += 30;
-    if (urgency === "hot") score += 50;
+	if (urgency === "cold") score += 10;
+	if (urgency === "warm") score += 30;
+	if (urgency === "hot") score += 50;
 
-    if (budget === "no") score += 0;
-    if (budget === "partial") score += 15;
-    if (budget === "yes") score += 30;
+	if (budget === "no") score += 0;
+	if (budget === "partial") score += 15;
+	if (budget === "yes") score += 30;
 
-    if (decisionMaker === "no") score += 0;
-    if (decisionMaker === "influencer") score += 10;
-    if (decisionMaker === "yes") score += 20;
+	if (decisionMaker === "no") score += 0;
+	if (decisionMaker === "influencer") score += 10;
+	if (decisionMaker === "yes") score += 20;
 
-    return score;
+	return score;
 }
 
 function getDealIdFromRequest(request, body) {
-    const url = new URL(request.url);
+	const url = new URL(request.url);
 
-    const fromQuery =
-        url.searchParams.get("deal_id") ||
-        url.searchParams.get("dealId") ||
-        url.searchParams.get("selectedIds");
+	const fromQuery =
+		url.searchParams.get("deal_id") ||
+		url.searchParams.get("dealId") ||
+		url.searchParams.get("selectedIds");
 
-    if (fromQuery) {
-        const first = String(fromQuery).split(",")[0];
-        return Number(first);
-    }
+	if (fromQuery) {
+		const first = String(fromQuery).split(",")[0];
+		return Number(first);
+	}
 
-    if (body && body.deal_id) {
-        return Number(body.deal_id);
-    }
+	if (body && body.deal_id) {
+		return Number(body.deal_id);
+	}
 
-    if (body && body.selectedIds) {
-        const first = Array.isArray(body.selectedIds)
-            ? body.selectedIds[0]
-            : String(body.selectedIds).split(",")[0];
+	if (body && body.selectedIds) {
+		const first = Array.isArray(body.selectedIds)
+			? body.selectedIds[0]
+			: String(body.selectedIds).split(",")[0];
 
-        return Number(first);
-    }
+		return Number(first);
+	}
 
-    return null;
+	return null;
 }
 
 function jsonModalInitialData() {
-    return Response.json({
-        data: {
-            blocks: {
-                block_need_urgency: {
-                    value: "warm"
-                },
-                block_budget: {
-                    value: "partial"
-                },
-                block_decision_maker: {
-                    value: "influencer"
-                },
-                block_note: {
-                    value: ""
-                }
-            }
-        }
-    });
+	return Response.json({
+		data: {
+			blocks: {
+				block_need_urgency: {
+					value: "warm"
+				},
+				block_budget: {
+					value: "partial"
+				},
+				block_decision_maker: {
+					value: "influencer"
+				},
+				block_note: {
+					value: ""
+				}
+			}
+		}
+	});
 }
 
 function jsonModalSuccessMessage(assignResult, score) {
-    if (!assignResult.assigned) {
-        return Response.json({
-            error: {
-                message: assignResult.message || "Deal was not assigned."
-            }
-        });
-    }
+	if (!assignResult.assigned) {
+		return Response.json({
+			error: {
+				message: assignResult.message || "Deal was not assigned."
+			}
+		});
+	}
 
-    return Response.json({
-        success: {
-            type: "snackbar",
-            message: `Lead score ${score}. Deal assigned to ${assignResult.assigned_user.name}.`
-        }
-    });
+	return Response.json({
+		success: {
+			type: "snackbar",
+			message: `Lead score ${score}. Deal assigned to ${assignResult.assigned_user.name}.`
+		}
+	});
 }
 
 export async function handleJsonLeadScoringModal(request, env) {
-    if (request.method === "GET") {
-        return jsonModalInitialData();
-    }
+	if (request.method === "GET") {
+		return jsonModalInitialData();
+	}
 
-    if (request.method !== "POST") {
-        return Response.json(
-            {
-                error: {
-                    message: "Method not allowed."
-                }
-            },
-            { status: 405 }
-        );
-    }
+	if (request.method !== "POST") {
+		return Response.json(
+			{
+				error: {
+					message: "Method not allowed."
+				}
+			},
+			{ status: 405 }
+		);
+	}
 
-    const body = await request.json();
+	const body = await request.json();
 
-    const dealId = getDealIdFromRequest(request, body);
+	const dealId = getDealIdFromRequest(request, body);
 
-    if (!dealId) {
-        return Response.json({
-            error: {
-                message: "Deal ID was not received from Pipedrive. Open this action from a deal detail page."
-            }
-        });
-    }
+	if (!dealId) {
+		return Response.json({
+			error: {
+				message: "Deal ID was not received from Pipedrive. Open this action from a deal detail page."
+			}
+		});
+	}
 
-    const urgency = getBlockValue(body, "block_need_urgency");
-    const budget = getBlockValue(body, "block_budget");
-    const decisionMaker = getBlockValue(body, "block_decision_maker");
+	const urgency = getBlockValue(body, "block_need_urgency");
+	const budget = getBlockValue(body, "block_budget");
+	const decisionMaker = getBlockValue(body, "block_decision_maker");
 
-    const score = calculateLeadScore({
-        urgency,
-        budget,
-        decisionMaker
-    });
+	const score = calculateLeadScore({
+		urgency,
+		budget,
+		decisionMaker
+	});
 
-    const assignResult = await assignDealCore({
-        env,
-        dealId,
-        score
-    });
+	const assignResult = await assignDealCore({
+		env,
+		dealId,
+		score
+	});
 
-    return jsonModalSuccessMessage(assignResult, score);
+	return jsonModalSuccessMessage(assignResult, score);
 }
 
 export async function getCustomLeadScoringPage(request) {
-    const url = new URL(request.url);
+	const url = new URL(request.url);
 
-    const rawDealId =
-        url.searchParams.get("deal_id") ||
-        url.searchParams.get("dealId") ||
-        url.searchParams.get("selectedIds") ||
-        "";
+	const rawDealId =
+		url.searchParams.get("deal_id") ||
+		url.searchParams.get("dealId") ||
+		url.searchParams.get("selectedIds") ||
+		"";
 
-    const dealId = String(rawDealId).split(",")[0];
+	const dealId = String(rawDealId).split(",")[0];
 
-
-    const html = `<!doctype html>
+	const html = `<!doctype html>
 <html>
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<title>Lead scoring</title>
 
-	<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 	<script src="https://cdn.jsdelivr.net/npm/@pipedrive/app-extensions-sdk@0/dist/index.umd.js"></script>
+	<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 
 	<style>
 		body {
 			font-family: Arial, sans-serif;
 			margin: 24px;
 			color: #17233c;
+			background: #ffffff;
 		}
 
 		h1 {
@@ -200,6 +200,17 @@ export async function getCustomLeadScoringPage(request) {
 			color: #5f6b7a;
 			line-height: 1.5;
 			margin-bottom: 20px;
+		}
+
+		.debug {
+			font-size: 12px;
+			color: #6b7280;
+			background: #f8fafc;
+			border: 1px solid #e5e7eb;
+			border-radius: 6px;
+			padding: 8px;
+			margin-bottom: 16px;
+			word-break: break-all;
 		}
 
 		.field {
@@ -270,6 +281,10 @@ export async function getCustomLeadScoringPage(request) {
 		The Worker then updates the deal owner in Pipedrive.
 	</div>
 
+	<div class="debug">
+		Deal ID: <strong id="debugDealId">${dealId || "not received"}</strong>
+	</div>
+
 	<input type="hidden" id="dealId" value="${dealId}">
 
 	<div class="field">
@@ -315,6 +330,41 @@ export async function getCustomLeadScoringPage(request) {
 	<script>
 		let sdk = null;
 
+		async function initSdk() {
+			try {
+				const params = new URLSearchParams(window.location.search);
+				const id = params.get("id");
+
+				if (!window.AppExtensionsSDK) {
+					throw new Error("AppExtensionsSDK was not loaded.");
+				}
+
+				if (id) {
+					sdk = await new window.AppExtensionsSDK({
+						identifier: id
+					}).initialize({
+						size: {
+							width: 600,
+							height: 650
+						}
+					});
+				} else {
+					sdk = await new window.AppExtensionsSDK().initialize({
+						size: {
+							width: 600,
+							height: 650
+						}
+					});
+				}
+
+				console.log("Pipedrive SDK initialized");
+			} catch (error) {
+				console.error("SDK init failed", error);
+			}
+		}
+
+		const sdkReady = initSdk();
+
 		function calculateScore() {
 			let score = 0;
 
@@ -346,33 +396,6 @@ export async function getCustomLeadScoringPage(request) {
 				.text(message || "");
 		}
 
-async function initSdk() {
-	try {
-		const params = new URLSearchParams(window.location.search);
-
-		const id = params.get("id");
-		const token = params.get("token");
-
-		if (!window.PipedriveAppExtensionsSDK) {
-			throw new Error("Pipedrive App Extensions SDK was not loaded.");
-		}
-
-		if (!id || !token) {
-			console.log("SDK init skipped because id/token are missing. This is normal when testing outside Pipedrive.");
-			return;
-		}
-
-		sdk = await window.PipedriveAppExtensionsSDK.initialize({
-			id,
-			token
-		});
-
-		console.log("Pipedrive SDK initialized");
-	} catch (error) {
-		console.log("SDK init failed", error);
-	}
-}
-
 		$(document).on("change", "select", calculateScore);
 
 		$(document).on("click", "#assignButton", async function () {
@@ -388,6 +411,8 @@ async function initSdk() {
 			setStatus("Assigning deal...", "");
 
 			try {
+				await sdkReady;
+
 				const response = await fetch("/api/assign", {
 					method: "POST",
 					headers: {
@@ -406,16 +431,6 @@ async function initSdk() {
 				}
 
 				setStatus("Assigned to " + data.assigned_user.name + ".", "success");
-
-				if (sdk && sdk.execute) {
-					try {
-						await sdk.execute("SHOW_SNACKBAR", {
-							message: "Lead score " + score + ". Deal assigned to " + data.assigned_user.name + "."
-						});
-					} catch (error) {
-						console.log("Snackbar failed", error);
-					}
-				}
 			} catch (error) {
 				setStatus(error.message, "error");
 			} finally {
@@ -423,16 +438,17 @@ async function initSdk() {
 			}
 		});
 
-		initSdk();
-		calculateScore();
-
+		$(function () {
+			calculateScore();
+		});
 	</script>
 </body>
 </html>`;
 
-    return new Response(html, {
-        headers: {
-            "Content-Type": "text/html; charset=utf-8"
-        }
-    });
+	return new Response(html, {
+		headers: {
+			"Content-Type": "text/html; charset=utf-8",
+			"Cache-Control": "no-store"
+		}
+	});
 }

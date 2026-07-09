@@ -1,25 +1,25 @@
 import {
-    getPipedriveDealsForOwner,
-    updatePipedriveDealOwner
+	getPipedriveDealsForOwner,
+	updatePipedriveDealOwner
 } from "./pipedrive.js";
 
 async function getInstalledAccount(env) {
-    const row = await env.DB.prepare(`
+	const row = await env.DB.prepare(`
 		SELECT *
 		FROM oauth_tokens
 		ORDER BY id DESC
 		LIMIT 1
 	`).first();
 
-    if (!row) {
-        throw new Error("No Pipedrive OAuth token found. Open /oauth/start first.");
-    }
+	if (!row) {
+		throw new Error("No Pipedrive OAuth token found. Open /oauth/start first.");
+	}
 
-    return row;
+	return row;
 }
 
 async function getActiveCapacities(env, companyId) {
-    const result = await env.DB.prepare(`
+	const result = await env.DB.prepare(`
 		SELECT
 			pipedrive_user_id,
 			user_name,
@@ -30,112 +30,112 @@ async function getActiveCapacities(env, companyId) {
 		AND daily_capacity > 0
 		ORDER BY user_name ASC
 	`)
-        .bind(companyId)
-        .all();
+		.bind(companyId)
+		.all();
 
-    return result.results || [];
+	return result.results || [];
 }
 
 function getTodayStartLocalIso() {
-    const now = new Date();
+	const now = new Date();
 
-    const start = new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate(),
-        0,
-        0,
-        0,
-        0
-    );
+	const start = new Date(
+		now.getFullYear(),
+		now.getMonth(),
+		now.getDate(),
+		0,
+		0,
+		0,
+		0
+	);
 
-    return start.toISOString();
+	return start.toISOString();
 }
 
 function getDealAddTime(deal) {
-    return deal.add_time || deal.addTime || null;
+	return deal.add_time || deal.addTime || null;
 }
 
 function isCreatedToday(deal, todayStartIso) {
-    const addTime = getDealAddTime(deal);
+	const addTime = getDealAddTime(deal);
 
-    if (!addTime) {
-        return false;
-    }
+	if (!addTime) {
+		return false;
+	}
 
-    const dealTime = new Date(addTime).getTime();
-    const todayStart = new Date(todayStartIso).getTime();
+	const dealTime = new Date(addTime).getTime();
+	const todayStart = new Date(todayStartIso).getTime();
 
-    return dealTime >= todayStart;
+	return dealTime >= todayStart;
 }
 
 async function countTodayDealsForUser(env, userId, todayStartIso) {
-    let count = 0;
-    let cursor = null;
-    let shouldContinue = true;
+	let count = 0;
+	let cursor = null;
+	let shouldContinue = true;
 
-    while (shouldContinue) {
-        const response = await getPipedriveDealsForOwner(env, userId, cursor);
-        const deals = Array.isArray(response.data) ? response.data : [];
+	while (shouldContinue) {
+		const response = await getPipedriveDealsForOwner(env, userId, cursor);
+		const deals = Array.isArray(response.data) ? response.data : [];
 
-        for (const deal of deals) {
-            if (isCreatedToday(deal, todayStartIso)) {
-                count++;
-            } else {
-                shouldContinue = false;
-                break;
-            }
-        }
+		for (const deal of deals) {
+			if (isCreatedToday(deal, todayStartIso)) {
+				count++;
+			} else {
+				shouldContinue = false;
+				break;
+			}
+		}
 
-        const nextCursor =
-            response.additional_data &&
-            response.additional_data.pagination &&
-            response.additional_data.pagination.next_cursor;
+		const nextCursor =
+			response.additional_data &&
+			response.additional_data.pagination &&
+			response.additional_data.pagination.next_cursor;
 
-        if (!nextCursor || deals.length === 0) {
-            shouldContinue = false;
-        }
+		if (!nextCursor || deals.length === 0) {
+			shouldContinue = false;
+		}
 
-        cursor = nextCursor;
-    }
+		cursor = nextCursor;
+	}
 
-    return count;
+	return count;
 }
 
 function chooseAssignee(capacityRows, todayCounts) {
-    const candidates = capacityRows
-        .map(row => {
-            const userId = Number(row.pipedrive_user_id);
-            const assignedToday = todayCounts[userId] || 0;
-            const dailyCapacity = Number(row.daily_capacity);
-            const remaining = dailyCapacity - assignedToday;
+	const candidates = capacityRows
+		.map(row => {
+			const userId = Number(row.pipedrive_user_id);
+			const assignedToday = todayCounts[userId] || 0;
+			const dailyCapacity = Number(row.daily_capacity);
+			const remaining = dailyCapacity - assignedToday;
 
-            return {
-                user_id: userId,
-                user_name: row.user_name,
-                daily_capacity: dailyCapacity,
-                assigned_today: assignedToday,
-                remaining
-            };
-        })
-        .filter(item => item.remaining > 0)
-        .sort((a, b) => {
-            if (a.assigned_today !== b.assigned_today) {
-                return a.assigned_today - b.assigned_today;
-            }
+			return {
+				user_id: userId,
+				user_name: row.user_name,
+				daily_capacity: dailyCapacity,
+				assigned_today: assignedToday,
+				remaining
+			};
+		})
+		.filter(item => item.remaining > 0)
+		.sort((a, b) => {
+			if (a.assigned_today !== b.assigned_today) {
+				return a.assigned_today - b.assigned_today;
+			}
 
-            if (a.remaining !== b.remaining) {
-                return b.remaining - a.remaining;
-            }
+			if (a.remaining !== b.remaining) {
+				return b.remaining - a.remaining;
+			}
 
-            return a.user_id - b.user_id;
-        });
+			return a.user_id - b.user_id;
+		});
 
-    return candidates[0] || null;
+	return candidates[0] || null;
 }
 
 async function logAssignment(env, companyId, dealId, assignee, score) {
-    await env.DB.prepare(`
+	await env.DB.prepare(`
 		INSERT INTO assignment_logs (
 			company_id,
 			deal_id,
@@ -145,14 +145,14 @@ async function logAssignment(env, companyId, dealId, assignee, score) {
 		)
 		VALUES (?, ?, ?, ?, ?)
 	`)
-        .bind(
-            companyId,
-            Number(dealId),
-            assignee.user_id,
-            assignee.user_name || "",
-            Number(score || 0)
-        )
-        .run();
+		.bind(
+			companyId,
+			Number(dealId),
+			assignee.user_id,
+			assignee.user_name || "",
+			Number(score || 0)
+		)
+		.run();
 }
 
 export async function assignDealCore({ env, dealId, score }) {
