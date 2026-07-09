@@ -10,6 +10,7 @@
 	"vars": {
 		"PIPEDRIVE_CLIENT_ID": "813fc8db019bf96b",
 		"PIPEDRIVE_CLIENT_SECRET": "a0b17f67c969d9761a24881901ed88493645ed55",
+		"PIPEDRIVE_JWT_SECRET": "smart-assignment-jwt-secret-demo-2026",
 	},
 	"observability": {
 		"enabled": true

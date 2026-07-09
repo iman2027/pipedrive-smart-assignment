@@ -1,0 +1,62 @@
+# Pipedrive Smart Assignment App
+
+Cloudflare Worker + D1 demo/private Pipedrive app.
+
+## Features
+
+- OAuth install flow
+- App Settings page for user daily capacity
+- Custom Lead Scoring modal
+- JSON Lead Scoring modal
+- Round-robin deal assignment with capacity skip
+- Deal Sidebar / Panel with today's capacity summary
+- Bitcoin JSON Panel
+- JWT validation for Pipedrive iframe/panel/modal requests
+- Basic rate limiting with D1
+- Admin check for saving settings
+
+## Required Cloudflare secrets
+
+```powershell
+npx wrangler secret put PIPEDRIVE_CLIENT_ID
+npx wrangler secret put PIPEDRIVE_CLIENT_SECRET
+npx wrangler secret put PIPEDRIVE_JWT_SECRET
+```
+
+Use the same `PIPEDRIVE_JWT_SECRET` in Pipedrive Developer Hub for Custom UI extensions, JSON Modal and JSON Panel.
+
+## D1 tables
+
+Run `schema.sql` against your remote D1 database:
+
+```powershell
+npx wrangler d1 execute pipedrive-smart-assignment-db --remote --file schema.sql
+```
+
+## Deploy
+
+```powershell
+npm install
+npx wrangler deploy
+```
+
+## Pipedrive URLs
+
+- OAuth callback: `https://app.loc.ir/oauth/callback`
+- OAuth start: `https://app.loc.ir/oauth/start`
+- App settings iframe: `https://app.loc.ir/settings`
+- Custom modal iframe: `https://app.loc.ir/custom-lead-scoring`
+- JSON modal endpoint: `https://app.loc.ir/json-lead-scoring`
+- Sidebar iframe: `https://app.loc.ir/sidebar`
+- JSON panel endpoint: `https://app.loc.ir/bitcoin-panel`
+
+## Required Pipedrive scopes
+
+- `base`
+- `users:read`
+- `deals:read`
+- `deals:full`
+
+## Notes
+
+After enabling security, direct browser access to iframe/API endpoints should return 401 unless Pipedrive sends a valid JWT token.
