@@ -27,6 +27,10 @@ import {
 	getSidebarPage
 } from "./sidebar.js";
 
+import {
+	getBitcoinJsonPanel
+} from "./bitcoinPanel.js";
+
 export default {
 	async fetch(request, env) {
 		const url = new URL(request.url);
@@ -54,6 +58,10 @@ export default {
 
 			if (url.pathname === "/sidebar") {
 				return getSidebarPage();
+			}
+
+			if (url.pathname === "/bitcoin-panel") {
+				return getBitcoinJsonPanel();
 			}
 
 			if (url.pathname === "/api/users") {
