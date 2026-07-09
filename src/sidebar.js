@@ -20,8 +20,10 @@ export async function getSidebarPage() {
     .badge { font-size: 12px; border-radius: 999px; padding: 4px 8px; background: #eef2f7; white-space: nowrap; }
     .badge.full { background: #fff0f0; color: #c03535; }
     .badge.ok { background: #ecfdf3; color: #0b7a3b; }
+    .badge.paused { background: #fff7ed; color: #c2410c; }
     .progress { width: 100%; height: 6px; background: #eef2f7; border-radius: 999px; margin-top: 6px; overflow: hidden; }
     .progressBar { height: 100%; background: #317ae2; width: 0%; }
+    .progressBar.paused { background: #f97316; }
     .assignmentItem { font-size: 12px; color: #374151; border-bottom: 1px solid #f0f2f5; padding: 8px 0; }
     .assignmentItem:last-child { border-bottom: 0; }
     .empty { font-size: 13px; color: #6b7280; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; }
@@ -62,9 +64,13 @@ export async function getSidebarPage() {
         const assigned = Number(user.assigned_today || 0);
         const capacity = Number(user.daily_capacity || 0);
         const remaining = Number(user.remaining || 0);
+        const paused = Boolean(user.paused_today);
         const percent = capacity > 0 ? Math.min(100, Math.round((assigned / capacity) * 100)) : 0;
-        const badgeClass = remaining <= 0 ? 'full' : 'ok';
-        return '<div class="userRow"><div style="flex:1;"><div class="userName">' + escapeHtml(user.user_name || user.user_id) + '</div><div class="userMeta">Remaining: ' + remaining + '</div><div class="progress"><div class="progressBar" style="width:' + percent + '%"></div></div></div><div class="badge ' + badgeClass + '">' + assigned + ' / ' + capacity + '</div></div>';
+        const badgeClass = paused ? 'paused' : remaining <= 0 ? 'full' : 'ok';
+        const badgeText = paused ? 'Paused' : assigned + ' / ' + capacity;
+        const metaText = paused ? 'Paused today' : 'Remaining: ' + remaining;
+        const barClass = paused ? 'paused' : '';
+        return '<div class="userRow"><div style="flex:1;"><div class="userName">' + escapeHtml(user.user_name || user.user_id) + '</div><div class="userMeta">' + escapeHtml(metaText) + '</div><div class="progress"><div class="progressBar ' + barClass + '" style="width:' + percent + '%"></div></div></div><div class="badge ' + badgeClass + '">' + escapeHtml(badgeText) + '</div></div>';
       }).join('');
       $('#usersList').html(html);
     }

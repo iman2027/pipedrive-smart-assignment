@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS user_capacities (
  user_name TEXT,
  daily_capacity INTEGER NOT NULL,
  sort_order INTEGER DEFAULT 0,
+ paused_until_date TEXT DEFAULT NULL,
  active INTEGER DEFAULT 1,
  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -51,4 +52,16 @@ CREATE TABLE IF NOT EXISTS rate_limits (
  request_count INTEGER NOT NULL DEFAULT 0,
  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
  UNIQUE(company_id, route_key, window_start)
+);
+
+
+CREATE TABLE IF NOT EXISTS webhook_events (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ company_id INTEGER,
+ webhook_id TEXT,
+ event_action TEXT,
+ event_object TEXT,
+ entity_id TEXT,
+ payload TEXT,
+ received_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
