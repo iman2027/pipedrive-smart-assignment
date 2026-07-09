@@ -1,4 +1,4 @@
-import { oauthStart } from './oauth.js';
+import { oauthStart, oauthCallback } from './oauth.js';
 
 export default {
 	async fetch(request, env) {
@@ -6,6 +6,10 @@ export default {
 
 		if (url.pathname === '/oauth/start') {
 			return oauthStart(env);
+		}
+
+		if (url.pathname === '/oauth/callback') {
+			return oauthCallback(request, env);
 		}
 
 		return new Response('Pipedrive App Running');
