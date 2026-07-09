@@ -1,4 +1,9 @@
 import {
+	handleJsonLeadScoringModal,
+	getCustomLeadScoringPage
+} from "./leadScoring.js";
+
+import {
 	oauthStart,
 	oauthCallback
 } from "./oauth.js";
@@ -16,6 +21,7 @@ import {
 import {
 	assignDeal
 } from "./assignment.js";
+
 
 export default {
 	async fetch(request, env) {
@@ -49,6 +55,14 @@ export default {
 
 			if (url.pathname === "/api/assign" && request.method === "POST") {
 				return assignDeal(request, env);
+			}
+
+			if (url.pathname === "/json-lead-scoring") {
+				return handleJsonLeadScoringModal(request, env);
+			}
+
+			if (url.pathname === "/custom-lead-scoring") {
+				return getCustomLeadScoringPage(request);
 			}
 
 			return new Response("Pipedrive Smart Assignment App Running");

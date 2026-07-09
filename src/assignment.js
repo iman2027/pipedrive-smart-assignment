@@ -155,92 +155,97 @@ async function logAssignment(env, companyId, dealId, assignee, score) {
         .run();
 }
 
+export async function assignDealCore({ env, dealId, score }) {
+	if (!dealId) {
+		return {
+			success: false,
+			assigned: false,
+			message: "deal_id is required."
+		};
+	}
+
+	const account = await getInstalledAccount(env);
+
+	const capacities = await getActiveCapacities(env, account.company_id);
+
+	if (capacities.length === 0) {
+		return {
+			success: true,
+			assigned: false,
+			message: "No user capacity is configured."
+		};
+	}
+
+	const todayStartIso = getTodayStartLocalIso();
+	const todayCounts = {};
+
+	for (const row of capacities) {
+		const userId = Number(row.pipedrive_user_id);
+		todayCounts[userId] = await countTodayDealsForUser(env, userId, todayStartIso);
+	}
+
+	const assignee = chooseAssignee(capacities, todayCounts);
+
+	if (!assignee) {
+		return {
+			success: true,
+			assigned: false,
+			message: "All users have reached their daily capacity. Deal was not assigned.",
+			today_counts: todayCounts
+		};
+	}
+
+	const updateResponse = await updatePipedriveDealOwner(
+		env,
+		dealId,
+		assignee.user_id
+	);
+
+	const updatedOwnerId =
+		updateResponse &&
+		updateResponse.data &&
+		Number(updateResponse.data.owner_id);
+
+	if (updatedOwnerId !== Number(assignee.user_id)) {
+		return {
+			success: false,
+			assigned: false,
+			message: "Pipedrive returned success, but deal owner was not changed.",
+			expected_owner_id: Number(assignee.user_id),
+			actual_owner_id: updatedOwnerId,
+			pipedrive_response: updateResponse
+		};
+	}
+
+	await logAssignment(env, account.company_id, dealId, assignee, score);
+
+	return {
+		success: true,
+		assigned: true,
+		assigned_user: {
+			id: assignee.user_id,
+			name: assignee.user_name
+		},
+		score,
+		today_counts: todayCounts,
+		pipedrive_response: updateResponse,
+		message: "Deal assigned successfully."
+	};
+}
+
 export async function assignDeal(request, env) {
-    const body = await request.json();
+	const body = await request.json();
 
-    const dealId = Number(body.deal_id);
-    const score = Number(body.score || 0);
+	const dealId = Number(body.deal_id);
+	const score = Number(body.score || 0);
 
-    if (!dealId) {
-        return Response.json(
-            {
-                success: false,
-                message: "deal_id is required."
-            },
-            { status: 400 }
-        );
-    }
+	const result = await assignDealCore({
+		env,
+		dealId,
+		score
+	});
 
-    const account = await getInstalledAccount(env);
+	const status = result.success ? 200 : 400;
 
-    const capacities = await getActiveCapacities(env, account.company_id);
-
-    if (capacities.length === 0) {
-        return Response.json(
-            {
-                success: true,
-                assigned: false,
-                message: "No user capacity is configured."
-            }
-        );
-    }
-
-    const todayStartIso = getTodayStartLocalIso();
-    const todayCounts = {};
-
-    for (const row of capacities) {
-        const userId = Number(row.pipedrive_user_id);
-        todayCounts[userId] = await countTodayDealsForUser(env, userId, todayStartIso);
-    }
-
-    const assignee = chooseAssignee(capacities, todayCounts);
-
-    if (!assignee) {
-        return Response.json({
-            success: true,
-            assigned: false,
-            message: "All users have reached their daily capacity. Deal was not assigned.",
-            today_counts: todayCounts
-        });
-    }
-
-    const updateResponse = await updatePipedriveDealOwner(
-        env,
-        dealId,
-        assignee.user_id
-    );
-
-    const updatedOwnerId =
-        updateResponse &&
-        updateResponse.data &&
-        Number(updateResponse.data.owner_id);
-
-    if (updatedOwnerId !== Number(assignee.user_id)) {
-        return Response.json(
-            {
-                success: false,
-                assigned: false,
-                message: "Pipedrive returned success, but deal owner was not changed.",
-                expected_owner_id: Number(assignee.user_id),
-                actual_owner_id: updatedOwnerId,
-                pipedrive_response: updateResponse
-            },
-            { status: 500 }
-        );
-    }
-
-    await logAssignment(env, account.company_id, dealId, assignee, score);
-
-    return Response.json({
-        success: true,
-        assigned: true,
-        assigned_user: {
-            id: assignee.user_id,
-            name: assignee.user_name
-        },
-        score,
-        today_counts: todayCounts,
-        pipedrive_response: updateResponse,
-        message: "Deal assigned successfully."
-    });
+	return Response.json(result, { status });
 }
