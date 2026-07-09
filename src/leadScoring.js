@@ -329,6 +329,7 @@ export async function getCustomLeadScoringPage(request) {
 
 	<script>
 		let sdk = null;
+		let Command = null;
 
 		async function initSdk() {
 			try {
@@ -356,6 +357,8 @@ export async function getCustomLeadScoringPage(request) {
 						}
 					});
 				}
+
+				Command = window.AppExtensionsSDK.Command;
 
 				console.log("Pipedrive SDK initialized");
 			} catch (error) {
@@ -431,6 +434,24 @@ export async function getCustomLeadScoringPage(request) {
 				}
 
 				setStatus("Assigned to " + data.assigned_user.name + ".", "success");
+
+
+				if (sdk && Command) {
+					try {
+						await sdk.execute(Command.SHOW_SNACKBAR, {
+							message: "Deal assigned by Smart Assignment App to " + data.assigned_user.name + "."
+						});
+					} catch (error) {
+						console.log("Snackbar failed", error);
+					}
+
+					try {
+						await sdk.execute(Command.CLOSE_MODAL);
+					} catch (error) {
+						console.log("Close modal failed", error);
+					}
+				}
+
 			} catch (error) {
 				setStatus(error.message, "error");
 			} finally {
