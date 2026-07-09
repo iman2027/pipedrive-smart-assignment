@@ -19,24 +19,26 @@ export async function oauthCallback(request, env) {
 		});
 	}
 
+	const body = new URLSearchParams({
+		client_id: env.PIPEDRIVE_CLIENT_ID,
+
+		client_secret: env.PIPEDRIVE_CLIENT_SECRET,
+
+		redirect_uri: 'https://app.loc.ir/oauth/callback',
+
+		code: code,
+
+		grant_type: 'authorization_code',
+	});
+
 	const response = await fetch('https://oauth.pipedrive.com/oauth/token', {
 		method: 'POST',
 
 		headers: {
-			'Content-Type': 'application/json',
+			'Content-Type': 'application/x-www-form-urlencoded',
 		},
 
-		body: JSON.stringify({
-			client_id: env.PIPEDRIVE_CLIENT_ID,
-
-			client_secret: env.PIPEDRIVE_CLIENT_SECRET,
-
-			redirect_uri: 'https://app.loc.ir/oauth/callback',
-
-			code: code,
-
-			grant_type: 'authorization_code',
-		}),
+		body,
 	});
 
 	const data = await response.json();
