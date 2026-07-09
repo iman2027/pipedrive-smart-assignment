@@ -1,3 +1,13 @@
+import {
+	Configuration as V1Configuration,
+	UsersApi
+} from "pipedrive/v1";
+
+import {
+	Configuration as V2Configuration,
+	DealsApi
+} from "pipedrive/v2";
+
 async function getInstalledAccount(env) {
 	const row = await env.DB.prepare(`
 		SELECT *
@@ -79,38 +89,64 @@ async function getValidAccount(env) {
 	return account;
 }
 
-export async function pipedriveRequest(env, path, options = {}) {
-	const account = await getValidAccount(env);
+function getBaseHost(account) {
+	return account.api_domain || "https://api.pipedrive.com";
+}
 
-	const apiDomain = account.api_domain || "https://api.pipedrive.com";
-	const url = new URL(path, apiDomain);
-
-	const response = await fetch(url.toString(), {
-		...options,
-		headers: {
-			"Authorization": `Bearer ${account.access_token}`,
-			"Content-Type": "application/json",
-			...(options.headers || {})
-		}
+function createV1Config(account) {
+	return new V1Configuration({
+		accessToken: async () => account.access_token,
+		basePath: `${getBaseHost(account)}/v1`
 	});
+}
 
-	const data = await response.json();
-
-	if (!response.ok) {
-		return {
-			ok: false,
-			status: response.status,
-			data
-		};
-	}
-
-	return {
-		ok: true,
-		status: response.status,
-		data
-	};
+function createV2Config(account) {
+	return new V2Configuration({
+		accessToken: async () => account.access_token,
+		basePath: `${getBaseHost(account)}/api/v2`
+	});
 }
 
 export async function getPipedriveUsers(env) {
-	return pipedriveRequest(env, "/api/v1/users");
+	const account = await getValidAccount(env);
+	const usersApi = new UsersApi(createV1Config(account));
+
+	return usersApi.getUsers();
+}
+
+export async function getPipedriveCurrentUser(env) {
+	const account = await getValidAccount(env);
+	const usersApi = new UsersApi(createV1Config(account));
+
+	return usersApi.getCurrentUser();
+}
+
+export async function getPipedriveDealsForOwner(env, ownerId, cursor = null) {
+	const account = await getValidAccount(env);
+	const dealsApi = new DealsApi(createV2Config(account));
+
+	const params = {
+		ownerId: Number(ownerId),
+		limit: 100,
+		sortBy: "add_time",
+		sortDirection: "desc"
+	};
+
+	if (cursor) {
+		params.cursor = cursor;
+	}
+
+	return dealsApi.getDeals(params);
+}
+
+export async function updatePipedriveDealOwner(env, dealId, ownerId) {
+	const account = await getValidAccount(env);
+	const dealsApi = new DealsApi(createV2Config(account));
+
+	return dealsApi.updateDeal({
+		id: Number(dealId),
+		updateDealRequest: {
+			owner_id: Number(ownerId)
+		}
+	});
 }

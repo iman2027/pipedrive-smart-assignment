@@ -13,6 +13,10 @@ import {
 	saveCapacities
 } from "./settings.js";
 
+import {
+	assignDeal
+} from "./assignment.js";
+
 export default {
 	async fetch(request, env) {
 		const url = new URL(request.url);
@@ -32,12 +36,7 @@ export default {
 
 			if (url.pathname === "/api/users") {
 				const result = await getPipedriveUsers(env);
-
-				if (!result.ok) {
-					return Response.json(result, { status: result.status });
-				}
-
-				return Response.json(result.data);
+				return Response.json(result);
 			}
 
 			if (url.pathname === "/api/capacities" && request.method === "GET") {
@@ -48,12 +47,17 @@ export default {
 				return saveCapacities(request, env);
 			}
 
+			if (url.pathname === "/api/assign" && request.method === "POST") {
+				return assignDeal(request, env);
+			}
+
 			return new Response("Pipedrive Smart Assignment App Running");
 		} catch (error) {
 			return Response.json(
 				{
 					success: false,
-					error: error.message
+					error: error.message,
+					stack: error.stack
 				},
 				{ status: 500 }
 			);
