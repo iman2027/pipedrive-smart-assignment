@@ -14,13 +14,18 @@ import {
 } from "./settings.js";
 
 import {
-	assignDeal
+	assignDeal,
+	getAssignmentSummary
 } from "./assignment.js";
 
 import {
 	handleJsonLeadScoringModal,
 	getCustomLeadScoringPage
 } from "./leadScoring.js";
+
+import {
+	getSidebarPage
+} from "./sidebar.js";
 
 export default {
 	async fetch(request, env) {
@@ -47,6 +52,10 @@ export default {
 				return getCustomLeadScoringPage(request);
 			}
 
+			if (url.pathname === "/sidebar") {
+				return getSidebarPage();
+			}
+
 			if (url.pathname === "/api/users") {
 				const result = await getPipedriveUsers(env);
 				return Response.json(result);
@@ -62,6 +71,10 @@ export default {
 
 			if (url.pathname === "/api/assign" && request.method === "POST") {
 				return assignDeal(request, env);
+			}
+
+			if (url.pathname === "/api/assignment-summary" && request.method === "GET") {
+				return getAssignmentSummary(env);
 			}
 
 			return new Response("Pipedrive Smart Assignment App Running");

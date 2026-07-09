@@ -85,7 +85,7 @@ async function countTodayDealsForUser(env, userId, todayStartIso) {
 	let cursor = null;
 	let shouldContinue = true;
 
-	const debugDeals = [];
+	const checkedDeals = [];
 
 	while (shouldContinue) {
 		const response = await getPipedriveDealsForOwner(env, userId, cursor);
@@ -94,13 +94,14 @@ async function countTodayDealsForUser(env, userId, todayStartIso) {
 		for (const deal of deals) {
 			const dealOwnerId = getDealOwnerId(deal);
 			const createdToday = isCreatedToday(deal, todayStartIso);
+			const counted = createdToday && dealOwnerId === Number(userId);
 
-			debugDeals.push({
+			checkedDeals.push({
 				id: deal.id,
 				title: deal.title,
 				owner_id: dealOwnerId,
 				add_time: getDealAddTime(deal),
-				counted: createdToday && dealOwnerId === Number(userId)
+				counted
 			});
 
 			if (!createdToday) {
@@ -108,7 +109,7 @@ async function countTodayDealsForUser(env, userId, todayStartIso) {
 				break;
 			}
 
-			if (dealOwnerId === Number(userId)) {
+			if (counted) {
 				count++;
 			}
 		}
@@ -127,7 +128,7 @@ async function countTodayDealsForUser(env, userId, todayStartIso) {
 
 	return {
 		count,
-		debugDeals
+		checkedDeals
 	};
 }
 
@@ -180,7 +181,6 @@ function buildRoundRobinCandidates(capacityRows, todayCounts) {
 
 function chooseRoundRobinAssignee(capacityRows, todayCounts, lastAssignedUserId) {
 	const candidates = buildRoundRobinCandidates(capacityRows, todayCounts);
-
 	const availableCandidates = candidates.filter(item => item.remaining > 0);
 
 	if (availableCandidates.length === 0) {
@@ -241,6 +241,81 @@ async function logAssignment(env, companyId, dealId, assignee, score) {
 		.run();
 }
 
+async function getLatestAssignments(env, companyId) {
+	const result = await env.DB.prepare(`
+		SELECT
+			deal_id,
+			assigned_user_id,
+			assigned_user_name,
+			score,
+			created_at
+		FROM assignment_logs
+		WHERE company_id = ?
+		ORDER BY id DESC
+		LIMIT 10
+	`)
+		.bind(companyId)
+		.all();
+
+	return result.results || [];
+}
+
+export async function buildAssignmentSummary(env) {
+	const account = await getInstalledAccount(env);
+	const capacities = await getActiveCapacities(env, account.company_id);
+	const todayStartIso = getTodayStartLocalIso();
+
+	const todayCounts = {};
+	const users = [];
+
+	for (const row of capacities) {
+		const userId = Number(row.pipedrive_user_id);
+		const result = await countTodayDealsForUser(env, userId, todayStartIso);
+
+		todayCounts[userId] = result.count;
+
+		users.push({
+			user_id: userId,
+			user_name: row.user_name,
+			daily_capacity: Number(row.daily_capacity),
+			assigned_today: result.count,
+			remaining: Number(row.daily_capacity) - result.count,
+			sort_order: Number(row.sort_order || 0)
+		});
+	}
+
+	const lastAssignedUserId = await getLastAssignedUserId(env, account.company_id);
+	const latestAssignments = await getLatestAssignments(env, account.company_id);
+
+	const choice = chooseRoundRobinAssignee(
+		capacities,
+		todayCounts,
+		lastAssignedUserId
+	);
+
+	return {
+		success: true,
+		company_id: account.company_id,
+		company_name: account.company_name,
+		today_start_iso: todayStartIso,
+		last_assigned_user_id: lastAssignedUserId,
+		next_available_user: choice.assignee
+			? {
+				id: choice.assignee.user_id,
+				name: choice.assignee.user_name
+			}
+			: null,
+		users,
+		latest_assignments: latestAssignments
+	};
+}
+
+export async function getAssignmentSummary(env) {
+	const summary = await buildAssignmentSummary(env);
+
+	return Response.json(summary);
+}
+
 export async function assignDealCore({ env, dealId, score }) {
 	if (!dealId) {
 		return {
@@ -277,7 +352,7 @@ export async function assignDealCore({ env, dealId, score }) {
 			daily_capacity: Number(row.daily_capacity),
 			counted_today: result.count,
 			remaining: Number(row.daily_capacity) - result.count,
-			checked_deals: result.debugDeals
+			checked_deals: result.checkedDeals
 		};
 	}
 

@@ -14,21 +14,53 @@ function getFirstValue(value) {
 	return value;
 }
 
+function findValueDeep(input, possibleKeys) {
+	if (!input || typeof input !== "object") {
+		return null;
+	}
+
+	for (const key of possibleKeys) {
+		if (Object.prototype.hasOwnProperty.call(input, key)) {
+			return input[key];
+		}
+	}
+
+	for (const value of Object.values(input)) {
+		if (value && typeof value === "object") {
+			const found = findValueDeep(value, possibleKeys);
+
+			if (found !== null && found !== undefined) {
+				return found;
+			}
+		}
+	}
+
+	return null;
+}
+
 function getBlockValue(body, key) {
-	const blocks =
+	const directBlocks =
 		body &&
 		body.data &&
 		body.data.blocks
 			? body.data.blocks
 			: body.blocks || {};
 
-	const block = blocks[key];
+	const directBlock = directBlocks[key];
 
-	if (!block) {
-		return null;
+	if (directBlock) {
+		return getFirstValue(directBlock.value || directBlock);
 	}
 
-	return getFirstValue(block.value);
+	const possibleValues = [
+		key,
+		key.replace("block_", ""),
+		key.replace("block_", "") + "_value"
+	];
+
+	const found = findValueDeep(body, possibleValues);
+
+	return getFirstValue(found);
 }
 
 function calculateLeadScore({ urgency, budget, decisionMaker }) {
@@ -55,21 +87,29 @@ function getDealIdFromRequest(request, body) {
 	const fromQuery =
 		url.searchParams.get("deal_id") ||
 		url.searchParams.get("dealId") ||
-		url.searchParams.get("selectedIds");
+		url.searchParams.get("selectedIds") ||
+		url.searchParams.get("selected_ids") ||
+		url.searchParams.get("resourceId") ||
+		url.searchParams.get("resource_id");
 
 	if (fromQuery) {
 		const first = String(fromQuery).split(",")[0];
 		return Number(first);
 	}
 
-	if (body && body.deal_id) {
-		return Number(body.deal_id);
-	}
+	const fromBody = findValueDeep(body, [
+		"deal_id",
+		"dealId",
+		"selectedIds",
+		"selected_ids",
+		"resourceId",
+		"resource_id"
+	]);
 
-	if (body && body.selectedIds) {
-		const first = Array.isArray(body.selectedIds)
-			? body.selectedIds[0]
-			: String(body.selectedIds).split(",")[0];
+	if (fromBody) {
+		const first = Array.isArray(fromBody)
+			? fromBody[0]
+			: String(fromBody).split(",")[0];
 
 		return Number(first);
 	}
@@ -98,19 +138,31 @@ function jsonModalInitialData() {
 	});
 }
 
+function jsonModalError(message, status = 200) {
+	return Response.json(
+		{
+			error: {
+				message
+			}
+		},
+		{ status }
+	);
+}
+
 function jsonModalSuccessMessage(assignResult, score) {
 	if (!assignResult.assigned) {
-		return Response.json({
-			error: {
-				message: assignResult.message || "Deal was not assigned."
-			}
-		});
+		return jsonModalError(assignResult.message || "Deal was not assigned.");
 	}
 
 	return Response.json({
 		success: {
 			type: "snackbar",
 			message: `Lead score ${score}. Deal assigned to ${assignResult.assigned_user.name}.`
+		},
+		data: {
+			assigned: true,
+			score,
+			assigned_user: assignResult.assigned_user
 		}
 	});
 }
@@ -121,31 +173,28 @@ export async function handleJsonLeadScoringModal(request, env) {
 	}
 
 	if (request.method !== "POST") {
-		return Response.json(
-			{
-				error: {
-					message: "Method not allowed."
-				}
-			},
-			{ status: 405 }
-		);
+		return jsonModalError("Method not allowed.", 405);
 	}
 
-	const body = await request.json();
+	let body = {};
+
+	try {
+		body = await request.json();
+	} catch (error) {
+		return jsonModalError("Invalid JSON payload.");
+	}
 
 	const dealId = getDealIdFromRequest(request, body);
 
 	if (!dealId) {
-		return Response.json({
-			error: {
-				message: "Deal ID was not received from Pipedrive. Open this action from a deal detail page."
-			}
-		});
+		return jsonModalError(
+			"Deal ID was not received from Pipedrive. Open this action from a deal detail page."
+		);
 	}
 
-	const urgency = getBlockValue(body, "block_need_urgency");
-	const budget = getBlockValue(body, "block_budget");
-	const decisionMaker = getBlockValue(body, "block_decision_maker");
+	const urgency = getBlockValue(body, "block_need_urgency") || "warm";
+	const budget = getBlockValue(body, "block_budget") || "partial";
+	const decisionMaker = getBlockValue(body, "block_decision_maker") || "influencer";
 
 	const score = calculateLeadScore({
 		urgency,
@@ -433,27 +482,23 @@ export async function getCustomLeadScoringPage(request) {
 					throw new Error(data.message || data.error || "Deal was not assigned.");
 				}
 
-setStatus("Assigned to " + data.assigned_user.name + ". Closing modal...", "success");
+				setStatus("Assigned to " + data.assigned_user.name + ".", "success");
 
-if (sdk && Command) {
-	try {
-		await sdk.execute(Command.SHOW_SNACKBAR, {
-			message: "Deal assigned by Smart Assignment App to " + data.assigned_user.name + "."
-		});
-	} catch (error) {
-		console.log("Snackbar failed", error);
-	}
+				if (sdk && Command) {
+					try {
+						await sdk.execute(Command.SHOW_SNACKBAR, {
+							message: "Deal assigned by Smart Assignment App to " + data.assigned_user.name + "."
+						});
+					} catch (error) {
+						console.log("Snackbar failed", error);
+					}
 
-	setTimeout(async function () {
-		try {
-			await sdk.execute(Command.CLOSE_MODAL);
-		} catch (error) {
-			console.log("Close modal failed", error);
-		}
-	}, 1800);
-}
-
-
+					try {
+						await sdk.execute(Command.CLOSE_MODAL);
+					} catch (error) {
+						console.log("Close modal failed", error);
+					}
+				}
 			} catch (error) {
 				setStatus(error.message, "error");
 			} finally {
