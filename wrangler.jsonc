@@ -16,10 +16,9 @@
 	],
 	"d1_databases": [
 		{
-			"binding": "pipedrive_smart_assignment_db",
+			"binding": "DB",
 			"database_name": "pipedrive-smart-assignment-db",
 			"database_id": "118ce7c2-348e-4897-93db-e8302a686f56",
-			"remote": true
 		}
 	]
 	/**
