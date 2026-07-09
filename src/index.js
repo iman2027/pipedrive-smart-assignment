@@ -10,6 +10,6 @@
 
 export default {
 	async fetch(request, env, ctx) {
-		return new Response('Pipedrive App Running');
+		return new Response('Pipedrive App Running!');
 	},
 };
