@@ -359,8 +359,8 @@ export async function getCapacities(env) {
 		FROM user_capacities
 		WHERE company_id = ?
 		AND active = 1
-		ORDER BY user_name ASC
-	`)
+		ORDER BY sort_order ASC, user_name ASC
+		`)
 		.bind(account.company_id)
 		.all();
 
@@ -426,29 +426,34 @@ export async function saveCapacities(request, env) {
 		.bind(account.company_id)
 		.run();
 
-	for (const item of items) {
+	for (let index = 0; index < items.length; index++) {
+		const item = items[index];
+
 		await env.DB.prepare(`
-			INSERT INTO user_capacities (
-				company_id,
-				pipedrive_user_id,
-				user_name,
-				daily_capacity,
-				active,
-				updated_at
-			)
-			VALUES (?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
-			ON CONFLICT(company_id, pipedrive_user_id)
-			DO UPDATE SET
-				user_name = excluded.user_name,
-				daily_capacity = excluded.daily_capacity,
-				active = 1,
-				updated_at = CURRENT_TIMESTAMP
-		`)
+		INSERT INTO user_capacities (
+			company_id,
+			pipedrive_user_id,
+			user_name,
+			daily_capacity,
+			sort_order,
+			active,
+			updated_at
+		)
+		VALUES (?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
+		ON CONFLICT(company_id, pipedrive_user_id)
+		DO UPDATE SET
+			user_name = excluded.user_name,
+			daily_capacity = excluded.daily_capacity,
+			sort_order = excluded.sort_order,
+			active = 1,
+			updated_at = CURRENT_TIMESTAMP
+	`)
 			.bind(
 				account.company_id,
 				Number(item.pipedrive_user_id),
 				item.user_name || "",
-				Number(item.daily_capacity)
+				Number(item.daily_capacity),
+				index
 			)
 			.run();
 	}
@@ -461,7 +466,7 @@ export async function saveCapacities(request, env) {
 		FROM user_capacities
 		WHERE company_id = ?
 		AND active = 1
-		ORDER BY user_name ASC
+		ORDER BY sort_order ASC, user_name ASC
 	`)
 		.bind(account.company_id)
 		.all();

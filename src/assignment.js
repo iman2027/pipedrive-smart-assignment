@@ -23,12 +23,13 @@ async function getActiveCapacities(env, companyId) {
 		SELECT
 			pipedrive_user_id,
 			user_name,
-			daily_capacity
+			daily_capacity,
+			sort_order
 		FROM user_capacities
 		WHERE company_id = ?
 		AND active = 1
 		AND daily_capacity > 0
-		ORDER BY user_name ASC
+		ORDER BY sort_order ASC, user_name ASC
 	`)
 		.bind(companyId)
 		.all();
@@ -102,36 +103,84 @@ async function countTodayDealsForUser(env, userId, todayStartIso) {
 	return count;
 }
 
-function chooseAssignee(capacityRows, todayCounts) {
-	const candidates = capacityRows
-		.map(row => {
-			const userId = Number(row.pipedrive_user_id);
-			const assignedToday = todayCounts[userId] || 0;
-			const dailyCapacity = Number(row.daily_capacity);
-			const remaining = dailyCapacity - assignedToday;
+async function getLastAssignedUserId(env, companyId) {
+	const row = await env.DB.prepare(`
+		SELECT last_assigned_user_id
+		FROM assignment_state
+		WHERE company_id = ?
+	`)
+		.bind(companyId)
+		.first();
 
-			return {
-				user_id: userId,
-				user_name: row.user_name,
-				daily_capacity: dailyCapacity,
-				assigned_today: assignedToday,
-				remaining
-			};
-		})
-		.filter(item => item.remaining > 0)
-		.sort((a, b) => {
-			if (a.assigned_today !== b.assigned_today) {
-				return a.assigned_today - b.assigned_today;
-			}
+	return row ? Number(row.last_assigned_user_id) : null;
+}
 
-			if (a.remaining !== b.remaining) {
-				return b.remaining - a.remaining;
-			}
+async function updateLastAssignedUserId(env, companyId, userId) {
+	await env.DB.prepare(`
+		INSERT INTO assignment_state (
+			company_id,
+			last_assigned_user_id,
+			updated_at
+		)
+		VALUES (?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(company_id)
+		DO UPDATE SET
+			last_assigned_user_id = excluded.last_assigned_user_id,
+			updated_at = CURRENT_TIMESTAMP
+	`)
+		.bind(companyId, Number(userId))
+		.run();
+}
 
-			return a.user_id - b.user_id;
-		});
+function buildRoundRobinCandidates(capacityRows, todayCounts) {
+	return capacityRows.map(row => {
+		const userId = Number(row.pipedrive_user_id);
+		const assignedToday = todayCounts[userId] || 0;
+		const dailyCapacity = Number(row.daily_capacity);
+		const remaining = dailyCapacity - assignedToday;
 
-	return candidates[0] || null;
+		return {
+			user_id: userId,
+			user_name: row.user_name,
+			daily_capacity: dailyCapacity,
+			assigned_today: assignedToday,
+			remaining,
+			sort_order: Number(row.sort_order || 0)
+		};
+	});
+}
+
+function chooseRoundRobinAssignee(capacityRows, todayCounts, lastAssignedUserId) {
+	const candidates = buildRoundRobinCandidates(capacityRows, todayCounts);
+
+	const availableCandidates = candidates.filter(item => item.remaining > 0);
+
+	if (availableCandidates.length === 0) {
+		return null;
+	}
+
+	const orderedUserIds = candidates.map(item => item.user_id);
+
+	let startIndex = 0;
+
+	if (lastAssignedUserId) {
+		const lastIndex = orderedUserIds.indexOf(Number(lastAssignedUserId));
+
+		if (lastIndex >= 0) {
+			startIndex = (lastIndex + 1) % orderedUserIds.length;
+		}
+	}
+
+	for (let offset = 0; offset < candidates.length; offset++) {
+		const index = (startIndex + offset) % candidates.length;
+		const candidate = candidates[index];
+
+		if (candidate.remaining > 0) {
+			return candidate;
+		}
+	}
+
+	return null;
 }
 
 async function logAssignment(env, companyId, dealId, assignee, score) {
@@ -184,14 +233,24 @@ export async function assignDealCore({ env, dealId, score }) {
 		todayCounts[userId] = await countTodayDealsForUser(env, userId, todayStartIso);
 	}
 
-	const assignee = chooseAssignee(capacities, todayCounts);
+	const lastAssignedUserId = await getLastAssignedUserId(
+		env,
+		account.company_id
+	);
+
+	const assignee = chooseRoundRobinAssignee(
+		capacities,
+		todayCounts,
+		lastAssignedUserId
+	);
 
 	if (!assignee) {
 		return {
 			success: true,
 			assigned: false,
 			message: "All users have reached their daily capacity. Deal was not assigned.",
-			today_counts: todayCounts
+			today_counts: todayCounts,
+			last_assigned_user_id: lastAssignedUserId
 		};
 	}
 
@@ -219,6 +278,12 @@ export async function assignDealCore({ env, dealId, score }) {
 
 	await logAssignment(env, account.company_id, dealId, assignee, score);
 
+	await updateLastAssignedUserId(
+		env,
+		account.company_id,
+		assignee.user_id
+	);
+
 	return {
 		success: true,
 		assigned: true,
@@ -228,6 +293,8 @@ export async function assignDealCore({ env, dealId, score }) {
 		},
 		score,
 		today_counts: todayCounts,
+		last_assigned_user_id: lastAssignedUserId,
+		next_round_robin_user_id: assignee.user_id,
 		pipedrive_response: updateResponse,
 		message: "Deal assigned successfully."
 	};
