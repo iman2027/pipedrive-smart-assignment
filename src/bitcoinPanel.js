@@ -80,47 +80,27 @@ export async function getBitcoinJsonPanel() {
 		const price = await getBitcoinPrice();
 
 		return Response.json({
-			data: [
-				{
-					id: "bitcoin-price",
-					title: "Bitcoin price",
-					subtitle: "Live BTC/USD market price",
-					fields: [
-						{
-							key: "price",
-							label: "BTC/USD",
-							value: formatUsd(price.usd)
-						},
-						{
-							key: "change_24h",
-							label: "24h change",
-							value: formatPercent(price.change24h)
-						},
-						{
-							key: "last_updated",
-							label: "Last updated",
-							value: formatDateTimeFromUnix(price.lastUpdatedAt)
-						}
-					]
-				}
-			]
+			data: {
+				id: 1,
+				header: "Bitcoin price",
+				price: `$${Number(price.usd).toLocaleString()}`,
+				change_24h: `${Number(price.change24h).toFixed(2)}%`,
+				last_updated: new Date(
+					price.lastUpdatedAt * 1000
+				).toISOString()
+			}
 		});
+
 	} catch (error) {
+
 		return Response.json({
-			data: [
-				{
-					id: "bitcoin-price-error",
-					title: "Bitcoin price",
-					subtitle: "Could not load price",
-					fields: [
-						{
-							key: "error",
-							label: "Error",
-							value: error.message
-						}
-					]
-				}
-			]
+			data: {
+				id: 1,
+				header: "Bitcoin price",
+				price: "Unavailable",
+				change_24h: "-",
+				last_updated: new Date().toISOString()
+			}
 		});
 	}
 }
