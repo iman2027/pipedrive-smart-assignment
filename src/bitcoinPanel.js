@@ -2,17 +2,49 @@ async function getBitcoinPrice() {
 	const response = await fetch(
 		"https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true&include_last_updated_at=true",
 		{
+			method: "GET",
 			headers: {
-				"Accept": "application/json"
+				"Accept": "application/json",
+				"User-Agent": "pipedrive-smart-assignment-app"
 			}
 		}
 	);
 
-	const data = await response.json();
+	const text = await response.text();
 
-	if (!response.ok || !data.bitcoin) {
-		throw new Error("Could not fetch Bitcoin price.");
+	console.log("CoinGecko status:", response.status);
+	console.log("CoinGecko response:", text);
+
+
+	let data;
+
+	try {
+		data = JSON.parse(text);
 	}
+	catch(error) {
+		throw new Error(
+			"Invalid JSON from CoinGecko: " + text.substring(0,200)
+		);
+	}
+
+
+	if (!response.ok) {
+		throw new Error(
+			"CoinGecko HTTP " +
+			response.status +
+			": " +
+			text.substring(0,200)
+		);
+	}
+
+
+	if (!data.bitcoin) {
+		throw new Error(
+			"Bitcoin data missing: " +
+			JSON.stringify(data).substring(0,200)
+		);
+	}
+
 
 	return {
 		usd: data.bitcoin.usd,
