@@ -13,6 +13,14 @@
 	"upload_source_maps": true,
 	"compatibility_flags": [
 		"nodejs_compat"
+	],
+	"d1_databases": [
+		{
+			"binding": "pipedrive_smart_assignment_db",
+			"database_name": "pipedrive-smart-assignment-db",
+			"database_id": "118ce7c2-348e-4897-93db-e8302a686f56",
+			"remote": true
+		}
 	]
 	/**
 	 * Smart Placement

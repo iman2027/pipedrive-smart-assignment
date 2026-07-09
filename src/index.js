@@ -9,7 +9,9 @@
  */
 
 export default {
-	async fetch(request, env, ctx) {
-		return new Response('Pipedrive App Running');
+	async fetch(request, env) {
+		const result = await env.DB.prepare('SELECT * FROM test').all();
+
+		return Response.json(result);
 	},
 };
