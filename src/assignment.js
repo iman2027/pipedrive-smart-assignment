@@ -57,6 +57,16 @@ function getDealAddTime(deal) {
 	return deal.add_time || deal.addTime || null;
 }
 
+function getDealOwnerId(deal) {
+	const ownerId =
+		deal.owner_id ||
+		deal.ownerId ||
+		(deal.owner && deal.owner.id) ||
+		null;
+
+	return ownerId ? Number(ownerId) : null;
+}
+
 function isCreatedToday(deal, todayStartIso) {
 	const addTime = getDealAddTime(deal);
 
@@ -75,16 +85,31 @@ async function countTodayDealsForUser(env, userId, todayStartIso) {
 	let cursor = null;
 	let shouldContinue = true;
 
+	const debugDeals = [];
+
 	while (shouldContinue) {
 		const response = await getPipedriveDealsForOwner(env, userId, cursor);
 		const deals = Array.isArray(response.data) ? response.data : [];
 
 		for (const deal of deals) {
-			if (isCreatedToday(deal, todayStartIso)) {
-				count++;
-			} else {
+			const dealOwnerId = getDealOwnerId(deal);
+			const createdToday = isCreatedToday(deal, todayStartIso);
+
+			debugDeals.push({
+				id: deal.id,
+				title: deal.title,
+				owner_id: dealOwnerId,
+				add_time: getDealAddTime(deal),
+				counted: createdToday && dealOwnerId === Number(userId)
+			});
+
+			if (!createdToday) {
 				shouldContinue = false;
 				break;
+			}
+
+			if (dealOwnerId === Number(userId)) {
+				count++;
 			}
 		}
 
@@ -100,7 +125,10 @@ async function countTodayDealsForUser(env, userId, todayStartIso) {
 		cursor = nextCursor;
 	}
 
-	return count;
+	return {
+		count,
+		debugDeals
+	};
 }
 
 async function getLastAssignedUserId(env, companyId) {
@@ -156,7 +184,10 @@ function chooseRoundRobinAssignee(capacityRows, todayCounts, lastAssignedUserId)
 	const availableCandidates = candidates.filter(item => item.remaining > 0);
 
 	if (availableCandidates.length === 0) {
-		return null;
+		return {
+			assignee: null,
+			candidates
+		};
 	}
 
 	const orderedUserIds = candidates.map(item => item.user_id);
@@ -176,11 +207,17 @@ function chooseRoundRobinAssignee(capacityRows, todayCounts, lastAssignedUserId)
 		const candidate = candidates[index];
 
 		if (candidate.remaining > 0) {
-			return candidate;
+			return {
+				assignee: candidate,
+				candidates
+			};
 		}
 	}
 
-	return null;
+	return {
+		assignee: null,
+		candidates
+	};
 }
 
 async function logAssignment(env, companyId, dealId, assignee, score) {
@@ -227,10 +264,21 @@ export async function assignDealCore({ env, dealId, score }) {
 
 	const todayStartIso = getTodayStartLocalIso();
 	const todayCounts = {};
+	const debugCounts = {};
 
 	for (const row of capacities) {
 		const userId = Number(row.pipedrive_user_id);
-		todayCounts[userId] = await countTodayDealsForUser(env, userId, todayStartIso);
+		const result = await countTodayDealsForUser(env, userId, todayStartIso);
+
+		todayCounts[userId] = result.count;
+
+		debugCounts[userId] = {
+			user_name: row.user_name,
+			daily_capacity: Number(row.daily_capacity),
+			counted_today: result.count,
+			remaining: Number(row.daily_capacity) - result.count,
+			checked_deals: result.debugDeals
+		};
 	}
 
 	const lastAssignedUserId = await getLastAssignedUserId(
@@ -238,11 +286,13 @@ export async function assignDealCore({ env, dealId, score }) {
 		account.company_id
 	);
 
-	const assignee = chooseRoundRobinAssignee(
+	const choice = chooseRoundRobinAssignee(
 		capacities,
 		todayCounts,
 		lastAssignedUserId
 	);
+
+	const assignee = choice.assignee;
 
 	if (!assignee) {
 		return {
@@ -250,7 +300,9 @@ export async function assignDealCore({ env, dealId, score }) {
 			assigned: false,
 			message: "All users have reached their daily capacity. Deal was not assigned.",
 			today_counts: todayCounts,
-			last_assigned_user_id: lastAssignedUserId
+			candidates: choice.candidates,
+			last_assigned_user_id: lastAssignedUserId,
+			debug_counts: debugCounts
 		};
 	}
 
@@ -272,7 +324,8 @@ export async function assignDealCore({ env, dealId, score }) {
 			message: "Pipedrive returned success, but deal owner was not changed.",
 			expected_owner_id: Number(assignee.user_id),
 			actual_owner_id: updatedOwnerId,
-			pipedrive_response: updateResponse
+			pipedrive_response: updateResponse,
+			debug_counts: debugCounts
 		};
 	}
 
@@ -293,9 +346,11 @@ export async function assignDealCore({ env, dealId, score }) {
 		},
 		score,
 		today_counts: todayCounts,
+		candidates: choice.candidates,
 		last_assigned_user_id: lastAssignedUserId,
 		next_round_robin_user_id: assignee.user_id,
 		pipedrive_response: updateResponse,
+		debug_counts: debugCounts,
 		message: "Deal assigned successfully."
 	};
 }
