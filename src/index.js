@@ -5,6 +5,7 @@ import { assignDeal, getAssignmentSummary } from './assignment.js';
 import { handleJsonLeadScoringModal, getCustomLeadScoringPage } from './leadScoring.js';
 import { getSidebarPage } from './sidebar.js';
 import { getBitcoinJsonPanel } from './bitcoinPanel.js';
+import { getCompanySalesAnalysisPage, handleCompanySalesAnalysis } from './companyAnalysis.js';
 import { requirePipedriveAuth, enforceRateLimit } from './auth.js';
 import {
   handlePipedriveWebhook
@@ -36,6 +37,11 @@ export default {
       if (url.pathname === '/sidebar') {
         await requirePipedriveAuth(request, env);
         return getSidebarPage();
+      }
+
+      if (url.pathname === '/company-sales-analysis' && request.method === 'GET') {
+        const authContext = await requirePipedriveAuth(request, env);
+        return getCompanySalesAnalysisPage(request, authContext);
       }
 
       if (url.pathname === '/json-lead-scoring') {
@@ -77,6 +83,12 @@ export default {
         const authContext = await requirePipedriveAuth(request, env);
         await enforceRateLimit(env, authContext.companyId, 'assignment-summary', 120, 60, request);
         return getAssignmentSummary(env, authContext);
+      }
+
+      if (url.pathname === '/api/company-sales-analysis' && request.method === 'POST') {
+        const authContext = await requirePipedriveAuth(request, env);
+        await enforceRateLimit(env, authContext.companyId, 'company-sales-analysis', 10, 60, request);
+        return handleCompanySalesAnalysis(request, env, authContext);
       }
 
       if (url.pathname === "/webhooks/pipedrive" && request.method === "POST") {

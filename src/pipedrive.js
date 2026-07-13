@@ -253,3 +253,48 @@ export async function updatePipedriveDealCustomField(env, dealId, fieldKey, valu
 
 	return data;
 }
+
+async function fetchPipedriveJson(account, path) {
+  const response = await fetch(`${getBaseHost(account)}${path}`, {
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Bearer ${account.access_token}`
+    }
+  });
+  const data = await response.json();
+  if (!response.ok || data.success === false) {
+    throw new Error(data.error || data.error_info || `Pipedrive request failed (${response.status}).`);
+  }
+  return data;
+}
+
+export async function getPipedriveOrganizationAnalysisData(env, organizationId, companyId) {
+  const account = await getValidAccount(env, companyId);
+  const id = Number(organizationId);
+  if (!Number.isInteger(id) || id <= 0) throw new Error('Invalid Pipedrive organization ID.');
+
+  const encodedId = encodeURIComponent(String(id));
+  const includeFields = [
+    'next_activity_id', 'last_activity_id', 'open_deals_count', 'closed_deals_count',
+    'won_deals_count', 'lost_deals_count', 'people_count', 'activities_count',
+    'done_activities_count', 'undone_activities_count', 'notes_count', 'files_count'
+  ].join(',');
+
+  const [organization, fields, deals, people, activities, notes] = await Promise.all([
+    fetchPipedriveJson(account, `/api/v2/organizations/${encodedId}?include_fields=${includeFields}&include_labels=true&include_option_labels=true`),
+    fetchPipedriveJson(account, '/api/v2/organizationFields?limit=500'),
+    fetchPipedriveJson(account, `/api/v2/deals?org_id=${encodedId}&status=open,won,lost&limit=100&sort_by=update_time&sort_direction=desc&include_option_labels=true&include_labels=true`),
+    fetchPipedriveJson(account, `/api/v2/persons?org_id=${encodedId}&limit=100&include_option_labels=true&include_labels=true`),
+    fetchPipedriveJson(account, `/api/v2/activities?org_id=${encodedId}&limit=100&sort_by=due_date&sort_direction=desc`),
+    fetchPipedriveJson(account, `/api/v1/notes?org_id=${encodedId}&limit=50&sort=update_time%20DESC`)
+  ]);
+
+  return {
+    organization: organization.data,
+    organizationFields: Array.isArray(fields.data) ? fields.data : [],
+    deals: Array.isArray(deals.data) ? deals.data : [],
+    people: Array.isArray(people.data) ? people.data : [],
+    activities: Array.isArray(activities.data) ? activities.data : [],
+    notes: Array.isArray(notes.data) ? notes.data : []
+  };
+}
