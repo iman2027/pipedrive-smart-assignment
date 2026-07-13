@@ -117,7 +117,56 @@ async function getRequestDetails(request) {
   };
 }
 
-export async function enforceRateLimit(env, companyId, routeKey, limit, windowSeconds, request) {
+export async function logRequest(env, request, companyId = 0) {
+  const detailsPromise = getRequestDetails(request);
+  let resolvedCompanyId = Number(companyId) || 0;
+
+  if (!resolvedCompanyId) {
+    const token = getTokenFromRequest(request);
+    const secret = env.PIPEDRIVE_JWT_SECRET || env.PIPEDRIVE_CLIENT_SECRET;
+    if (token && secret) {
+      try {
+        resolvedCompanyId = getCompanyIdFromPayload(await verifyHs256Jwt(token, secret));
+      } catch {
+        // Invalid requests must still be logged, but are not attributed to a company.
+      }
+    }
+  }
+
+  const details = await detailsPromise;
+  const url = new URL(request.url);
+  const routeKey = `request:${request.method}:${url.pathname}:${crypto.randomUUID()}`;
+
+  await env.DB.prepare(`
+    INSERT INTO rate_limits (
+      company_id, route_key, window_start, request_count, updated_at,
+      request_received_at, request, request_method, request_url, request_path,
+      request_query, request_headers, request_body, request_ip,
+      request_user_agent, request_content_type, request_country
+    ) VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(
+    resolvedCompanyId, routeKey, Date.now(), details.receivedAt, details.request,
+    details.method, details.url, details.path, details.query, details.headers,
+    details.body, details.ip, details.userAgent, details.contentType, details.country
+  ).run();
+}
+
+function getRateLimitSettings(env, routeKey) {
+  const limitKey = `RATE_LIMIT_${routeKey.replace(/[^a-z0-9]/gi, '_').toUpperCase()}`;
+  const limit = Number(env[limitKey]);
+  const windowSeconds = Number(env.RATE_LIMIT_WINDOW_SECONDS);
+
+  if (!Number.isInteger(limit) || limit <= 0) {
+    throw new Error(`${limitKey} must be a positive integer.`);
+  }
+  if (!Number.isInteger(windowSeconds) || windowSeconds <= 0) {
+    throw new Error('RATE_LIMIT_WINDOW_SECONDS must be a positive integer.');
+  }
+  return { limit, windowSeconds };
+}
+
+export async function enforceRateLimit(env, companyId, routeKey, request) {
+  const { limit, windowSeconds } = getRateLimitSettings(env, routeKey);
   const now = Math.floor(Date.now() / 1000);
   const windowStart = Math.floor(now / windowSeconds) * windowSeconds;
   const details = await getRequestDetails(request);

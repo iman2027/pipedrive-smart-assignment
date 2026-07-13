@@ -4,8 +4,26 @@ import {
 	waitOnExecutionContext,
 	SELF,
 } from "cloudflare:test";
-import { describe, it, expect } from "vitest";
+import { beforeAll, describe, it, expect } from "vitest";
 import worker from "../src";
+
+beforeAll(async () => {
+	await env.DB.prepare(`
+		CREATE TABLE IF NOT EXISTS rate_limits (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			company_id INTEGER NOT NULL,
+			route_key TEXT NOT NULL,
+			window_start INTEGER NOT NULL,
+			request_count INTEGER NOT NULL DEFAULT 0,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			request_received_at DATETIME, request TEXT, request_method TEXT,
+			request_url TEXT, request_path TEXT, request_query TEXT, request_headers TEXT,
+			request_body TEXT, request_ip TEXT, request_user_agent TEXT,
+			request_content_type TEXT, request_country TEXT,
+			UNIQUE(company_id, route_key, window_start)
+		)
+	`).run();
+});
 
 function base64Url(value) {
 	const bytes = typeof value === "string" ? new TextEncoder().encode(value) : value;
@@ -63,5 +81,24 @@ describe("Pipedrive Smart Assignment worker", () => {
 		validUrl.searchParams.set("resource", "deal");
 		const invalidResponse = await SELF.fetch(validUrl);
 		expect(invalidResponse.status).toBe(403);
+	});
+
+	it("logs every request, including OAuth routes, without applying a new limit", async () => {
+		const before = await env.DB.prepare("SELECT COUNT(*) AS count FROM rate_limits WHERE route_key LIKE 'request:%'").first();
+		await SELF.fetch(new Request("http://example.com/oauth/start?source=test", { redirect: "manual" }));
+		await SELF.fetch("http://example.com/oauth/callback?error=access_denied&source=test");
+		const after = await env.DB.prepare("SELECT COUNT(*) AS count FROM rate_limits WHERE route_key LIKE 'request:%'").first();
+		expect(Number(after.count)).toBe(Number(before.count) + 2);
+
+		const callbackLog = await env.DB.prepare(`
+			SELECT request_method, request_path, request_query
+			FROM rate_limits WHERE request_path = '/oauth/callback'
+			ORDER BY id DESC LIMIT 1
+		`).first();
+		expect(callbackLog).toMatchObject({
+			request_method: "GET",
+			request_path: "/oauth/callback",
+			request_query: "?error=access_denied&source=test"
+		});
 	});
 });

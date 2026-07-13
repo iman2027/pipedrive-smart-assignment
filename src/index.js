@@ -6,14 +6,20 @@ import { handleJsonLeadScoringModal, getCustomLeadScoringPage } from './leadScor
 import { getSidebarPage } from './sidebar.js';
 import { getBitcoinJsonPanel } from './bitcoinPanel.js';
 import { getCompanySalesAnalysisPage, handleCompanySalesAnalysis } from './companyAnalysis.js';
-import { requirePipedriveAuth, enforceRateLimit } from './auth.js';
+import { requirePipedriveAuth, enforceRateLimit, logRequest } from './auth.js';
 import {
   handlePipedriveWebhook
 } from "./webhooks.js";
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    const requestCompanyId = Number(url.searchParams.get('companyId')) || 0;
+    const logging = logRequest(env, request, requestCompanyId).catch(error => {
+      console.error('Could not log request:', error.message);
+    });
+    if (ctx?.waitUntil) ctx.waitUntil(logging);
+    else await logging;
 
     try {
       if (url.pathname === '/oauth/start') {
@@ -46,13 +52,13 @@ export default {
 
       if (url.pathname === '/json-lead-scoring') {
         const authContext = await requirePipedriveAuth(request, env);
-        await enforceRateLimit(env, authContext.companyId, 'json-lead-scoring', 60, 60, request);
+        await enforceRateLimit(env, authContext.companyId, 'json-lead-scoring', request);
         return handleJsonLeadScoringModal(request, env, authContext);
       }
 
       if (url.pathname === '/bitcoin-panel') {
         const authContext = await requirePipedriveAuth(request, env);
-        await enforceRateLimit(env, authContext.companyId, 'bitcoin-panel', 120, 60, request);
+        await enforceRateLimit(env, authContext.companyId, 'bitcoin-panel', request);
         return getBitcoinJsonPanel();
       }
 
@@ -69,25 +75,25 @@ export default {
 
       if (url.pathname === '/api/capacities' && request.method === 'POST') {
         const authContext = await requirePipedriveAuth(request, env);
-        await enforceRateLimit(env, authContext.companyId, 'save-capacities', 20, 60, request);
+        await enforceRateLimit(env, authContext.companyId, 'save-capacities', request);
         return saveCapacities(request, env, authContext);
       }
 
       if (url.pathname === '/api/assign' && request.method === 'POST') {
         const authContext = await requirePipedriveAuth(request, env);
-        await enforceRateLimit(env, authContext.companyId, 'assign', 60, 60, request);
+        await enforceRateLimit(env, authContext.companyId, 'assign', request);
         return assignDeal(request, env, authContext);
       }
 
       if (url.pathname === '/api/assignment-summary' && request.method === 'GET') {
         const authContext = await requirePipedriveAuth(request, env);
-        await enforceRateLimit(env, authContext.companyId, 'assignment-summary', 120, 60, request);
+        await enforceRateLimit(env, authContext.companyId, 'assignment-summary', request);
         return getAssignmentSummary(env, authContext);
       }
 
       if (url.pathname === '/api/company-sales-analysis' && request.method === 'POST') {
         const authContext = await requirePipedriveAuth(request, env);
-        await enforceRateLimit(env, authContext.companyId, 'company-sales-analysis', 10, 60, request);
+        await enforceRateLimit(env, authContext.companyId, 'company-sales-analysis', request);
         return handleCompanySalesAnalysis(request, env, authContext);
       }
 
