@@ -97,9 +97,30 @@ export async function requirePipedriveAuth(request, env) {
   }
 }
 
-export async function enforceRateLimit(env, companyId, routeKey, limit, windowSeconds) {
+async function getRequestDetails(request) {
+  const url = new URL(request.url);
+  const body = request.body ? await request.clone().text() : null;
+
+  return {
+    receivedAt: new Date().toISOString(),
+    request: `${request.method} ${request.url}`,
+    method: request.method,
+    url: request.url,
+    path: url.pathname,
+    query: url.search,
+    headers: JSON.stringify(Object.fromEntries(request.headers)),
+    body,
+    ip: request.headers.get('CF-Connecting-IP'),
+    userAgent: request.headers.get('User-Agent'),
+    contentType: request.headers.get('Content-Type'),
+    country: request.cf?.country || request.headers.get('CF-IPCountry')
+  };
+}
+
+export async function enforceRateLimit(env, companyId, routeKey, limit, windowSeconds, request) {
   const now = Math.floor(Date.now() / 1000);
   const windowStart = Math.floor(now / windowSeconds) * windowSeconds;
+  const details = await getRequestDetails(request);
 
   const row = await env.DB.prepare(`
     SELECT request_count
@@ -109,9 +130,17 @@ export async function enforceRateLimit(env, companyId, routeKey, limit, windowSe
 
   if (!row) {
     await env.DB.prepare(`
-      INSERT INTO rate_limits (company_id, route_key, window_start, request_count, updated_at)
-      VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP)
-    `).bind(companyId, routeKey, windowStart).run();
+      INSERT INTO rate_limits (
+        company_id, route_key, window_start, request_count, updated_at,
+        request_received_at, request, request_method, request_url, request_path,
+        request_query, request_headers, request_body, request_ip,
+        request_user_agent, request_content_type, request_country
+      ) VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      companyId, routeKey, windowStart, details.receivedAt, details.request,
+      details.method, details.url, details.path, details.query, details.headers,
+      details.body, details.ip, details.userAgent, details.contentType, details.country
+    ).run();
     return;
   }
 
@@ -125,7 +154,14 @@ export async function enforceRateLimit(env, companyId, routeKey, limit, windowSe
 
   await env.DB.prepare(`
     UPDATE rate_limits
-    SET request_count = request_count + 1, updated_at = CURRENT_TIMESTAMP
+    SET request_count = request_count + 1, updated_at = CURRENT_TIMESTAMP,
+        request_received_at = ?, request = ?, request_method = ?, request_url = ?,
+        request_path = ?, request_query = ?, request_headers = ?, request_body = ?,
+        request_ip = ?, request_user_agent = ?, request_content_type = ?, request_country = ?
     WHERE company_id = ? AND route_key = ? AND window_start = ?
-  `).bind(companyId, routeKey, windowStart).run();
+  `).bind(
+    details.receivedAt, details.request, details.method, details.url, details.path,
+    details.query, details.headers, details.body, details.ip, details.userAgent,
+    details.contentType, details.country, companyId, routeKey, windowStart
+  ).run();
 }

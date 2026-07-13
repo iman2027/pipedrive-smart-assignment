@@ -51,6 +51,18 @@ CREATE TABLE IF NOT EXISTS rate_limits (
  window_start INTEGER NOT NULL,
  request_count INTEGER NOT NULL DEFAULT 0,
  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+ request_received_at DATETIME,
+ request TEXT,
+ request_method TEXT,
+ request_url TEXT,
+ request_path TEXT,
+ request_query TEXT,
+ request_headers TEXT,
+ request_body TEXT,
+ request_ip TEXT,
+ request_user_agent TEXT,
+ request_content_type TEXT,
+ request_country TEXT,
  UNIQUE(company_id, route_key, window_start)
 );
 
