@@ -179,9 +179,9 @@ export async function getSettingsPage() {
       }
 
       if (runtimeId) {
-        sdk = await new window.AppExtensionsSDK({ identifier: runtimeId }).initialize({ size: { width: 900, height: 760 } });
+        sdk = await new window.AppExtensionsSDK({ identifier: runtimeId }).initialize();
       } else {
-        sdk = await new window.AppExtensionsSDK().initialize({ size: { width: 900, height: 760 } });
+        sdk = await new window.AppExtensionsSDK().initialize();
       }
 
       Command = window.AppExtensionsSDK.Command;
