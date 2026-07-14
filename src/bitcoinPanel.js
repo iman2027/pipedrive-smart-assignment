@@ -1,5 +1,10 @@
-async function getBitcoinPrice() {
-  const response = await fetch(
+import { externalApiFetch } from './externalApi.js';
+
+async function getBitcoinPrice(env) {
+  const response = await externalApiFetch(
+    env,
+    'coingecko',
+    0,
     'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true&include_last_updated_at=true',
     {
       method: 'GET',
@@ -27,9 +32,9 @@ async function getBitcoinPrice() {
   };
 }
 
-export async function getBitcoinJsonPanel() {
+export async function getBitcoinJsonPanel(env) {
   try {
-    const price = await getBitcoinPrice();
+    const price = await getBitcoinPrice(env);
     return Response.json({
       data: {
         id: 1,

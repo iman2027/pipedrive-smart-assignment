@@ -1,6 +1,7 @@
 import {
 	setupInstalledCompany
 } from "./appSetup.js";
+import { externalApiFetch } from "./externalApi.js";
 
 function htmlResponse(content, status = 200) {
 	return new Response(content, {
@@ -60,7 +61,7 @@ async function exchangeCodeForToken(request, env, code) {
 	body.set("client_id", clientId);
 	body.set("client_secret", clientSecret);
 
-	const response = await fetch("https://oauth.pipedrive.com/oauth/token", {
+	const response = await externalApiFetch(env, "pipedrive-oauth", 0, "https://oauth.pipedrive.com/oauth/token", {
 		method: "POST",
 		headers: {
 			"Accept": "application/json",
@@ -86,8 +87,8 @@ async function exchangeCodeForToken(request, env, code) {
 	return data;
 }
 
-async function getCurrentUserFromPipedrive(apiDomain, accessToken) {
-	const response = await fetch(`${apiDomain}/api/v1/users/me`, {
+async function getCurrentUserFromPipedrive(env, apiDomain, accessToken) {
+	const response = await externalApiFetch(env, "pipedrive", 0, `${apiDomain}/api/v1/users/me`, {
 		method: "GET",
 		headers: {
 			"Accept": "application/json",
@@ -379,6 +380,7 @@ export async function oauthCallback(request, env) {
 		const tokenData = await exchangeCodeForToken(request, env, code);
 
 		const currentUser = await getCurrentUserFromPipedrive(
+			env,
 			tokenData.api_domain,
 			tokenData.access_token
 		);

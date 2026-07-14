@@ -6,6 +6,7 @@ import {
 } from "cloudflare:test";
 import { beforeAll, describe, it, expect } from "vitest";
 import worker from "../src";
+import { externalApiFetch } from "../src/externalApi.js";
 
 beforeAll(async () => {
 	await env.DB.prepare(`
@@ -21,6 +22,28 @@ beforeAll(async () => {
 			request_body TEXT, request_ip TEXT, request_user_agent TEXT,
 			request_content_type TEXT, request_country TEXT,
 			UNIQUE(company_id, route_key, window_start)
+		)
+	`).run();
+	await env.DB.prepare(`
+		CREATE TABLE IF NOT EXISTS external_api_calls (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			company_id INTEGER NOT NULL DEFAULT 0,
+			service TEXT NOT NULL,
+			request_started_at DATETIME NOT NULL,
+			response_received_at DATETIME,
+			duration_ms INTEGER,
+			request_method TEXT NOT NULL,
+			request_url TEXT NOT NULL,
+			request_headers TEXT,
+			request_body TEXT,
+			response_status INTEGER,
+			response_status_text TEXT,
+			response_headers TEXT,
+			response_body TEXT,
+			success INTEGER NOT NULL DEFAULT 0,
+			error_name TEXT,
+			error_message TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)
 	`).run();
 });
@@ -100,5 +123,45 @@ describe("Pipedrive Smart Assignment worker", () => {
 			request_path: "/oauth/callback",
 			request_query: "?error=access_denied&source=test"
 		});
+	});
+
+	it("stores complete external API request and response data", async () => {
+		const response = await externalApiFetch(
+			env,
+			"test-service",
+			321,
+			"https://api.example.com/items?full=true",
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json", "X-Api-Key": "secret" },
+				body: JSON.stringify({ name: "sample", count: 2 })
+			},
+			async () => new Response(JSON.stringify({ id: 9, saved: true, nested: { value: "complete" } }), {
+				status: 201,
+				statusText: "Created",
+				headers: { "Content-Type": "application/json", "X-Request-Id": "req-123" }
+			})
+		);
+
+		expect(response.status).toBe(201);
+		expect(await response.json()).toEqual({ id: 9, saved: true, nested: { value: "complete" } });
+
+		const log = await env.DB.prepare(`
+			SELECT * FROM external_api_calls
+			WHERE service = 'test-service'
+			ORDER BY id DESC LIMIT 1
+		`).first();
+		expect(log).toMatchObject({
+			company_id: 321,
+			request_method: "POST",
+			request_url: "https://api.example.com/items?full=true",
+			request_body: JSON.stringify({ name: "sample", count: 2 }),
+			response_status: 201,
+			response_status_text: "Created",
+			response_body: JSON.stringify({ id: 9, saved: true, nested: { value: "complete" } }),
+			success: 1
+		});
+		expect(JSON.parse(log.request_headers)).toMatchObject({ "content-type": "application/json", "x-api-key": "secret" });
+		expect(JSON.parse(log.response_headers)).toMatchObject({ "content-type": "application/json", "x-request-id": "req-123" });
 	});
 });

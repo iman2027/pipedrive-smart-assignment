@@ -14,6 +14,7 @@ Cloudflare Worker + D1 demo/private Pipedrive app.
 - Gemini-powered company analysis and sales strategy page
 - JWT validation for Pipedrive iframe/panel/modal requests
 - Basic rate limiting with D1
+- Complete outbound API request/response logging in D1 (`external_api_calls`)
 - Admin check for saving settings
 
 ## Required Cloudflare secrets
@@ -33,6 +34,12 @@ Run `schema.sql` against your remote D1 database:
 
 ```powershell
 npx wrangler d1 execute pipedrive-smart-assignment-db --remote --file schema.sql
+```
+
+For an existing database, apply the migrations instead:
+
+```powershell
+npx wrangler d1 migrations apply pipedrive-smart-assignment-db --remote
 ```
 
 ## Deploy

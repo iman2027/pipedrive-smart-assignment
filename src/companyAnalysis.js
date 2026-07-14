@@ -1,4 +1,5 @@
 import { getPipedriveOrganizationAnalysisData } from './pipedrive.js';
+import { externalApiFetch } from './externalApi.js';
 
 const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash';
 
@@ -156,10 +157,10 @@ const responseSchema = {
   }
 };
 
-async function analyzeWithGemini(env, prompt) {
+async function analyzeWithGemini(env, prompt, companyId) {
   if (!env.GEMINIAPIKEY) throw new Error('GEMINIAPIKEY is not configured.');
   const model = env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL;
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+  const response = await externalApiFetch(env, 'gemini', companyId, `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINIAPIKEY },
     body: JSON.stringify({
@@ -195,7 +196,7 @@ export async function handleCompanySalesAnalysis(request, env, authContext) {
   const raw = await getPipedriveOrganizationAnalysisData(env, organizationId, authContext.companyId);
   const company = compactOrganizationData(raw);
   const prompt = buildPrompt(company);
-  const gemini = await analyzeWithGemini(env, prompt);
+  const gemini = await analyzeWithGemini(env, prompt, authContext.companyId);
   return Response.json({ success: true, company: { name: company.name, id: company.id, properties: company.properties }, prompt, ...gemini });
 }
 

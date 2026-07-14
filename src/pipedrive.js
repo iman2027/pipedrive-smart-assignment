@@ -1,12 +1,4 @@
-import {
-  Configuration as V1Configuration,
-  UsersApi
-} from 'pipedrive/v1';
-
-import {
-  Configuration as V2Configuration,
-  DealsApi
-} from 'pipedrive/v2';
+import { externalApiFetch } from './externalApi.js';
 
 async function getInstalledAccount(env, companyId = null) {
   if (companyId) {
@@ -36,7 +28,7 @@ async function refreshAccessToken(env, account) {
     refresh_token: account.refresh_token
   });
 
-  const response = await fetch('https://oauth.pipedrive.com/oauth/token', {
+  const response = await externalApiFetch(env, 'pipedrive-oauth', account.company_id, 'https://oauth.pipedrive.com/oauth/token', {
     method: 'POST',
     headers: {
       Authorization: `Basic ${basicAuth}`,
@@ -85,58 +77,61 @@ function getBaseHost(account) {
   return account.api_domain || 'https://api.pipedrive.com';
 }
 
-function createV1Config(account) {
-  return new V1Configuration({
-    accessToken: async () => account.access_token,
-    basePath: `${getBaseHost(account)}/v1`
-  });
-}
-
-function createV2Config(account) {
-  return new V2Configuration({
-    accessToken: async () => account.access_token,
-    basePath: `${getBaseHost(account)}/api/v2`
-  });
+async function fetchPipedriveJson(env, account, path, init = {}) {
+  const response = await externalApiFetch(
+    env,
+    'pipedrive',
+    account.company_id,
+    `${getBaseHost(account)}${path}`,
+    {
+      ...init,
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${account.access_token}`,
+        ...(init.headers || {})
+      }
+    }
+  );
+  const data = await response.json();
+  if (!response.ok || data.success === false) {
+    throw new Error(data.error || data.error_info || `Pipedrive request failed (${response.status}).`);
+  }
+  return data;
 }
 
 export async function getPipedriveUsers(env, companyId = null) {
   const account = await getValidAccount(env, companyId);
-  const usersApi = new UsersApi(createV1Config(account));
-  return usersApi.getUsers();
+  return fetchPipedriveJson(env, account, '/api/v1/users');
 }
 
 export async function getPipedriveCurrentUser(env, companyId = null) {
   const account = await getValidAccount(env, companyId);
-  const usersApi = new UsersApi(createV1Config(account));
-  return usersApi.getCurrentUser();
+  return fetchPipedriveJson(env, account, '/api/v1/users/me');
 }
 
 export async function getPipedriveDealsForOwner(env, ownerId, cursor = null, companyId = null) {
   const account = await getValidAccount(env, companyId);
-  const dealsApi = new DealsApi(createV2Config(account));
-
-  const params = {
-    ownerId: Number(ownerId),
-    limit: 100,
-    sortBy: 'add_time',
-    sortDirection: 'desc'
-  };
-  if (cursor) params.cursor = cursor;
-  return dealsApi.getDeals(params);
+  const params = new URLSearchParams({
+    owner_id: String(Number(ownerId)),
+    limit: '100',
+    sort_by: 'add_time',
+    sort_direction: 'desc'
+  });
+  if (cursor) params.set('cursor', cursor);
+  return fetchPipedriveJson(env, account, `/api/v2/deals?${params}`);
 }
 
 export async function getPipedriveDealById(env, dealId, companyId = null) {
   const account = await getValidAccount(env, companyId);
-  const dealsApi = new DealsApi(createV2Config(account));
-  return dealsApi.getDeal({ id: Number(dealId) });
+  return fetchPipedriveJson(env, account, `/api/v2/deals/${Number(dealId)}`);
 }
 
 export async function updatePipedriveDealOwner(env, dealId, ownerId, companyId = null) {
   const account = await getValidAccount(env, companyId);
-  const dealsApi = new DealsApi(createV2Config(account));
-  return dealsApi.updateDeal({
-    id: Number(dealId),
-    UpdateDealRequest: { owner_id: Number(ownerId) }
+  return fetchPipedriveJson(env, account, `/api/v2/deals/${Number(dealId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ owner_id: Number(ownerId) })
   });
 }
 
@@ -145,127 +140,54 @@ export async function updatePipedriveDealOwner(env, dealId, ownerId, companyId =
 
 export async function getPipedriveDealFields(env, companyId = null) {
 	const account = await getValidAccount(env, companyId);
-
-	const response = await fetch(`${account.api_domain}/api/v1/dealFields`, {
-		method: "GET",
-		headers: {
-			"Accept": "application/json",
-			"Authorization": `Bearer ${account.access_token}`
-		}
-	});
-
-	const data = await response.json();
-
-	if (!response.ok || data.success === false) {
-		throw new Error(data.error || "Could not fetch deal fields.");
-	}
-
-	return data;
+	return fetchPipedriveJson(env, account, '/api/v1/dealFields');
 }
 
 export async function createPipedriveDealField(env, companyId, name, fieldType) {
 	const account = await getValidAccount(env, companyId);
 
-	const response = await fetch(`${account.api_domain}/api/v1/dealFields`, {
+	return fetchPipedriveJson(env, account, '/api/v1/dealFields', {
 		method: "POST",
 		headers: {
-			"Accept": "application/json",
-			"Content-Type": "application/json",
-			"Authorization": `Bearer ${account.access_token}`
+			"Content-Type": "application/json"
 		},
 		body: JSON.stringify({
 			name,
 			field_type: fieldType
 		})
 	});
-
-	const data = await response.json();
-
-	if (!response.ok || data.success === false) {
-		throw new Error(data.error || "Could not create deal field.");
-	}
-
-	return data;
 }
 
 export async function getPipedriveWebhooks(env, companyId = null) {
 	const account = await getValidAccount(env, companyId);
 
-	const response = await fetch(`${account.api_domain}/api/v1/webhooks`, {
-		method: "GET",
-		headers: {
-			"Accept": "application/json",
-			"Authorization": `Bearer ${account.access_token}`
-		}
-	});
-
-	const data = await response.json();
-
-	if (!response.ok || data.success === false) {
-		throw new Error(data.error || "Could not fetch webhooks.");
-	}
-
-	return data;
+	return fetchPipedriveJson(env, account, '/api/v1/webhooks');
 }
 
 export async function createPipedriveWebhook(env, companyId, payload) {
 	const account = await getValidAccount(env, companyId);
 
-	const response = await fetch(`${account.api_domain}/api/v1/webhooks`, {
+	return fetchPipedriveJson(env, account, '/api/v1/webhooks', {
 		method: "POST",
 		headers: {
-			"Accept": "application/json",
-			"Content-Type": "application/json",
-			"Authorization": `Bearer ${account.access_token}`
+			"Content-Type": "application/json"
 		},
 		body: JSON.stringify(payload)
 	});
-
-	const data = await response.json();
-
-	if (!response.ok || data.success === false) {
-		throw new Error(data.error || "Could not create webhook.");
-	}
-
-	return data;
 }
 
 export async function updatePipedriveDealCustomField(env, dealId, fieldKey, value, companyId = null) {
 	const account = await getValidAccount(env, companyId);
 
-	const response = await fetch(`${account.api_domain}/api/v1/deals/${Number(dealId)}`, {
+	return fetchPipedriveJson(env, account, `/api/v1/deals/${Number(dealId)}`, {
 		method: "PUT",
 		headers: {
-			"Accept": "application/json",
-			"Content-Type": "application/json",
-			"Authorization": `Bearer ${account.access_token}`
+			"Content-Type": "application/json"
 		},
 		body: JSON.stringify({
 			[fieldKey]: value
 		})
 	});
-
-	const data = await response.json();
-
-	if (!response.ok || data.success === false) {
-		throw new Error(data.error || "Could not update deal custom field.");
-	}
-
-	return data;
-}
-
-async function fetchPipedriveJson(account, path) {
-  const response = await fetch(`${getBaseHost(account)}${path}`, {
-    headers: {
-      Accept: 'application/json',
-      Authorization: `Bearer ${account.access_token}`
-    }
-  });
-  const data = await response.json();
-  if (!response.ok || data.success === false) {
-    throw new Error(data.error || data.error_info || `Pipedrive request failed (${response.status}).`);
-  }
-  return data;
 }
 
 export async function getPipedriveOrganizationAnalysisData(env, organizationId, companyId) {
@@ -281,12 +203,12 @@ export async function getPipedriveOrganizationAnalysisData(env, organizationId, 
   ].join(',');
 
   const [organization, fields, deals, people, activities, notes] = await Promise.all([
-    fetchPipedriveJson(account, `/api/v2/organizations/${encodedId}?include_fields=${includeFields}&include_labels=true&include_option_labels=true`),
-    fetchPipedriveJson(account, '/api/v2/organizationFields?limit=500'),
-    fetchPipedriveJson(account, `/api/v2/deals?org_id=${encodedId}&status=open,won,lost&limit=100&sort_by=update_time&sort_direction=desc&include_option_labels=true&include_labels=true`),
-    fetchPipedriveJson(account, `/api/v2/persons?org_id=${encodedId}&limit=100&include_option_labels=true&include_labels=true`),
-    fetchPipedriveJson(account, `/api/v2/activities?org_id=${encodedId}&limit=100&sort_by=due_date&sort_direction=desc`),
-    fetchPipedriveJson(account, `/api/v1/notes?org_id=${encodedId}&limit=50&sort=update_time%20DESC`)
+    fetchPipedriveJson(env, account, `/api/v2/organizations/${encodedId}?include_fields=${includeFields}&include_labels=true&include_option_labels=true`),
+    fetchPipedriveJson(env, account, '/api/v2/organizationFields?limit=500'),
+    fetchPipedriveJson(env, account, `/api/v2/deals?org_id=${encodedId}&status=open,won,lost&limit=100&sort_by=update_time&sort_direction=desc&include_option_labels=true&include_labels=true`),
+    fetchPipedriveJson(env, account, `/api/v2/persons?org_id=${encodedId}&limit=100&include_option_labels=true&include_labels=true`),
+    fetchPipedriveJson(env, account, `/api/v2/activities?org_id=${encodedId}&limit=100&sort_by=due_date&sort_direction=desc`),
+    fetchPipedriveJson(env, account, `/api/v1/notes?org_id=${encodedId}&limit=50&sort=update_time%20DESC`)
   ]);
 
   return {

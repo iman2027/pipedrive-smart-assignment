@@ -59,7 +59,7 @@ export default {
       if (url.pathname === '/bitcoin-panel') {
         const authContext = await requirePipedriveAuth(request, env);
         await enforceRateLimit(env, authContext.companyId, 'bitcoin-panel', request);
-        return getBitcoinJsonPanel();
+        return getBitcoinJsonPanel(env);
       }
 
       if (url.pathname === '/api/users') {
