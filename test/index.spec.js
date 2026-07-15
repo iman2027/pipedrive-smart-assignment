@@ -10,6 +10,7 @@ import { externalApiFetch } from "../src/externalApi.js";
 
 beforeAll(async () => {
 	await env.DB.prepare("DROP TABLE IF EXISTS external_api_calls").run();
+	await env.DB.prepare("DROP TABLE IF EXISTS temprory_tokens").run();
 	await env.DB.prepare(`
 		CREATE TABLE IF NOT EXISTS rate_limits (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -48,6 +49,31 @@ beforeAll(async () => {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)
 	`).run();
+	await env.DB.prepare(`
+		CREATE TABLE temprory_tokens (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			token TEXT NOT NULL UNIQUE,
+			header TEXT NOT NULL,
+			payload TEXT NOT NULL,
+			algorithm TEXT,
+			token_type TEXT,
+			signature TEXT NOT NULL,
+			user_id INTEGER NOT NULL,
+			company_id INTEGER NOT NULL,
+			issued_at INTEGER,
+			expires_at INTEGER,
+			not_before INTEGER,
+			jwt_id TEXT,
+			token_source TEXT,
+			first_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			last_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			use_count INTEGER NOT NULL DEFAULT 1,
+			last_request_method TEXT,
+			last_request_path TEXT,
+			last_request_ip TEXT,
+			last_request_user_agent TEXT
+		)
+	`).run();
 });
 
 function base64Url(value) {
@@ -58,8 +84,9 @@ function base64Url(value) {
 }
 
 async function createPipedriveToken(companyId, userId) {
+	const issuedAt = Math.floor(Date.now() / 1000);
 	const header = base64Url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-	const payload = base64Url(JSON.stringify({ companyId, userId, exp: Math.floor(Date.now() / 1000) + 300 }));
+	const payload = base64Url(JSON.stringify({ companyId, userId, iat: issuedAt, exp: issuedAt + 300 }));
 	const key = await crypto.subtle.importKey(
 		"raw",
 		new TextEncoder().encode(env.PIPEDRIVE_JWT_SECRET),
@@ -106,6 +133,42 @@ describe("Pipedrive Smart Assignment worker", () => {
 		validUrl.searchParams.set("resource", "deal");
 		const invalidResponse = await SELF.fetch(validUrl);
 		expect(invalidResponse.status).toBe(403);
+	});
+
+	it("stores each verified Pipedrive JWT with decoded fields and usage metadata", async () => {
+		const token = await createPipedriveToken(222, 333);
+		const url = new URL("http://example.com/company-sales-analysis");
+		url.search = new URLSearchParams({
+			resource: "organization", view: "details", companyId: "222", userId: "333",
+			selectedIds: "444", token
+		}).toString();
+
+		const firstResponse = await SELF.fetch(url);
+		const secondResponse = await SELF.fetch(url);
+		expect(firstResponse.status).toBe(200);
+		expect(secondResponse.status).toBe(200);
+
+		const stored = await env.DB.prepare(`
+			SELECT * FROM temprory_tokens WHERE token = ?
+		`).bind(token).first();
+		const header = JSON.parse(stored.header);
+		const payload = JSON.parse(stored.payload);
+
+		expect(stored).toMatchObject({
+			token,
+			algorithm: "HS256",
+			token_type: "JWT",
+			user_id: 333,
+			company_id: 222,
+			token_source: "query",
+			use_count: 2,
+			last_request_method: "GET",
+			last_request_path: "/company-sales-analysis"
+		});
+		expect(header).toEqual({ alg: "HS256", typ: "JWT" });
+		expect(payload).toMatchObject({ userId: 333, companyId: 222 });
+		expect(stored.issued_at).toBe(payload.iat);
+		expect(stored.expires_at).toBe(payload.exp);
 	});
 
 	it("logs every request, including OAuth routes, without applying a new limit", async () => {

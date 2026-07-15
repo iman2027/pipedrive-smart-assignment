@@ -16,14 +16,20 @@ function bytesToUtf8(bytes) {
 }
 
 function getTokenFromRequest(request) {
+  return getTokenDetailsFromRequest(request).token;
+}
+
+function getTokenDetailsFromRequest(request) {
   const url = new URL(request.url);
   const queryToken = url.searchParams.get('token');
-  if (queryToken) return queryToken;
+  if (queryToken) return { token: queryToken, source: 'query' };
   const headerToken = request.headers.get('X-Pipedrive-Token') || request.headers.get('x-pipedrive-token');
-  if (headerToken) return headerToken;
+  if (headerToken) return { token: headerToken, source: 'x-pipedrive-token' };
   const authorization = request.headers.get('Authorization') || '';
-  if (authorization.startsWith('Bearer ')) return authorization.slice('Bearer '.length);
-  return null;
+  if (authorization.startsWith('Bearer ')) {
+    return { token: authorization.slice('Bearer '.length), source: 'authorization-bearer' };
+  }
+  return { token: null, source: null };
 }
 
 async function verifyHs256Jwt(token, secret) {
@@ -55,7 +61,7 @@ async function verifyHs256Jwt(token, secret) {
   if (payload.exp && Number(payload.exp) < now) throw new Error('JWT expired.');
   if (payload.nbf && Number(payload.nbf) > now) throw new Error('JWT not active yet.');
 
-  return payload;
+  return { header, payload, signature: encodedSignature };
 }
 
 function getCompanyIdFromPayload(payload) {
@@ -66,8 +72,69 @@ function getUserIdFromPayload(payload) {
   return Number(payload.userId || payload.user_id || payload.userID || 0);
 }
 
+function getOptionalNumericClaim(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+async function saveTemproryToken(env, request, tokenDetails, verified) {
+  const { token, source } = tokenDetails;
+  const { header, payload, signature } = verified;
+  const url = new URL(request.url);
+
+  await env.DB.prepare(`
+    INSERT INTO temprory_tokens (
+      token, header, payload, algorithm, token_type, signature,
+      user_id, company_id, issued_at, expires_at, not_before, jwt_id,
+      token_source, first_seen_at, last_seen_at, use_count,
+      last_request_method, last_request_path, last_request_ip,
+      last_request_user_agent
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP,
+      CURRENT_TIMESTAMP, 1, ?, ?, ?, ?)
+    ON CONFLICT(token) DO UPDATE SET
+      header = excluded.header,
+      payload = excluded.payload,
+      algorithm = excluded.algorithm,
+      token_type = excluded.token_type,
+      signature = excluded.signature,
+      user_id = excluded.user_id,
+      company_id = excluded.company_id,
+      issued_at = excluded.issued_at,
+      expires_at = excluded.expires_at,
+      not_before = excluded.not_before,
+      jwt_id = excluded.jwt_id,
+      token_source = excluded.token_source,
+      last_seen_at = CURRENT_TIMESTAMP,
+      use_count = temprory_tokens.use_count + 1,
+      last_request_method = excluded.last_request_method,
+      last_request_path = excluded.last_request_path,
+      last_request_ip = excluded.last_request_ip,
+      last_request_user_agent = excluded.last_request_user_agent
+  `).bind(
+    token,
+    JSON.stringify(header),
+    JSON.stringify(payload),
+    header.alg || null,
+    header.typ || null,
+    signature,
+    getUserIdFromPayload(payload),
+    getCompanyIdFromPayload(payload),
+    getOptionalNumericClaim(payload.iat),
+    getOptionalNumericClaim(payload.exp),
+    getOptionalNumericClaim(payload.nbf),
+    payload.jti ? String(payload.jti) : null,
+    source,
+    request.method,
+    url.pathname,
+    request.headers.get('CF-Connecting-IP'),
+    request.headers.get('User-Agent')
+  ).run();
+}
+
 export async function requirePipedriveAuth(request, env) {
-  const token = getTokenFromRequest(request);
+  const tokenDetails = getTokenDetailsFromRequest(request);
+  const token = tokenDetails.token;
   if (!token) {
     throw new Response(JSON.stringify({ success: false, error: 'Missing Pipedrive JWT token.' }), {
       status: 401,
@@ -84,11 +151,17 @@ export async function requirePipedriveAuth(request, env) {
   }
 
   try {
-    const payload = await verifyHs256Jwt(token, secret);
+    const verified = await verifyHs256Jwt(token, secret);
+    const payload = verified.payload;
     const companyId = getCompanyIdFromPayload(payload);
     const userId = getUserIdFromPayload(payload);
     if (!companyId || !userId) throw new Error('JWT does not include companyId/userId.');
-    return { token, payload, companyId, userId };
+    try {
+      await saveTemproryToken(env, request, tokenDetails, verified);
+    } catch (error) {
+      console.error('Could not store verified JWT:', error.message);
+    }
+    return { token, header: verified.header, payload, companyId, userId };
   } catch (error) {
     throw new Response(JSON.stringify({ success: false, error: error.message }), {
       status: 401,
@@ -126,7 +199,8 @@ export async function logRequest(env, request, companyId = 0) {
     const secret = env.PIPEDRIVE_JWT_SECRET || env.PIPEDRIVE_CLIENT_SECRET;
     if (token && secret) {
       try {
-        resolvedCompanyId = getCompanyIdFromPayload(await verifyHs256Jwt(token, secret));
+        const verified = await verifyHs256Jwt(token, secret);
+        resolvedCompanyId = getCompanyIdFromPayload(verified.payload);
       } catch {
         // Invalid requests must still be logged, but are not attributed to a company.
       }
