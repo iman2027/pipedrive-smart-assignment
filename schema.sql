@@ -82,6 +82,7 @@ CREATE TABLE IF NOT EXISTS external_api_calls (
  id INTEGER PRIMARY KEY AUTOINCREMENT,
  company_id INTEGER NOT NULL DEFAULT 0,
  service TEXT NOT NULL,
+ call_source TEXT NOT NULL DEFAULT 'backend' CHECK(call_source IN ('backend', 'frontend')),
  request_started_at DATETIME NOT NULL,
  response_received_at DATETIME,
  duration_ms INTEGER,
@@ -104,3 +105,6 @@ CREATE INDEX IF NOT EXISTS idx_external_api_calls_company_created
 
 CREATE INDEX IF NOT EXISTS idx_external_api_calls_service_created
  ON external_api_calls(service, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_external_api_calls_source_created
+ ON external_api_calls(call_source, created_at DESC);

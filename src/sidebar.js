@@ -1,3 +1,5 @@
+import { getFrontendApiLoggerScript } from './frontendApiLogger.js';
+
 export async function getSidebarPage() {
   const html = `<!doctype html>
 <html>
@@ -5,6 +7,7 @@ export async function getSidebarPage() {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Assignment Summary</title>
+  ${getFrontendApiLoggerScript()}
   <script src="https://cdn.jsdelivr.net/npm/@pipedrive/app-extensions-sdk@0/dist/index.umd.js"></script>
   <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
   <style>

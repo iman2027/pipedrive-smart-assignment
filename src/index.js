@@ -7,6 +7,7 @@ import { getSidebarPage } from './sidebar.js';
 import { getBitcoinJsonPanel } from './bitcoinPanel.js';
 import { getCompanySalesAnalysisPage, handleCompanySalesAnalysis } from './companyAnalysis.js';
 import { requirePipedriveAuth, enforceRateLimit, logRequest } from './auth.js';
+import { logFrontendApiCall } from './externalApi.js';
 import {
   handlePipedriveWebhook
 } from "./webhooks.js";
@@ -66,6 +67,12 @@ export default {
         const authContext = await requirePipedriveAuth(request, env);
         const result = await getPipedriveUsers(env, authContext.companyId);
         return Response.json(result);
+      }
+
+      if (url.pathname === '/api/external-call-log' && request.method === 'POST') {
+        const authContext = await requirePipedriveAuth(request, env);
+        await logFrontendApiCall(env, authContext.companyId, await request.json());
+        return Response.json({ success: true });
       }
 
       if (url.pathname === '/api/capacities' && request.method === 'GET') {

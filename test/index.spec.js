@@ -9,6 +9,7 @@ import worker from "../src";
 import { externalApiFetch } from "../src/externalApi.js";
 
 beforeAll(async () => {
+	await env.DB.prepare("DROP TABLE IF EXISTS external_api_calls").run();
 	await env.DB.prepare(`
 		CREATE TABLE IF NOT EXISTS rate_limits (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -29,6 +30,7 @@ beforeAll(async () => {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			company_id INTEGER NOT NULL DEFAULT 0,
 			service TEXT NOT NULL,
+			call_source TEXT NOT NULL DEFAULT 'backend' CHECK(call_source IN ('backend', 'frontend')),
 			request_started_at DATETIME NOT NULL,
 			response_received_at DATETIME,
 			duration_ms INTEGER,
@@ -153,6 +155,7 @@ describe("Pipedrive Smart Assignment worker", () => {
 		`).first();
 		expect(log).toMatchObject({
 			company_id: 321,
+			call_source: "backend",
 			request_method: "POST",
 			request_url: "https://api.example.com/items?full=true",
 			request_body: JSON.stringify({ name: "sample", count: 2 }),
@@ -163,5 +166,46 @@ describe("Pipedrive Smart Assignment worker", () => {
 		});
 		expect(JSON.parse(log.request_headers)).toMatchObject({ "content-type": "application/json", "x-api-key": "secret" });
 		expect(JSON.parse(log.response_headers)).toMatchObject({ "content-type": "application/json", "x-request-id": "req-123" });
+	});
+
+	it("stores authenticated browser calls as frontend calls", async () => {
+		const token = await createPipedriveToken(654, 987);
+		const response = await SELF.fetch("http://example.com/api/external-call-log", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				"X-Pipedrive-Token": token
+			},
+			body: JSON.stringify({
+				service: "cdn.example.com",
+				requestStartedAt: "2026-07-15T08:00:00.000Z",
+				responseReceivedAt: "2026-07-15T08:00:00.125Z",
+				durationMs: 125,
+				requestMethod: "GET",
+				requestUrl: "https://cdn.example.com/sdk.js",
+				requestHeaders: { accept: "text/javascript" },
+				responseStatus: 200,
+				responseStatusText: "OK",
+				responseHeaders: { "content-type": "text/javascript" },
+				responseBody: "window.Example = true;",
+				success: true
+			})
+		});
+
+		expect(response.status).toBe(200);
+		const log = await env.DB.prepare(`
+			SELECT * FROM external_api_calls
+			WHERE request_url = 'https://cdn.example.com/sdk.js'
+			ORDER BY id DESC LIMIT 1
+		`).first();
+		expect(log).toMatchObject({
+			company_id: 654,
+			service: "cdn.example.com",
+			call_source: "frontend",
+			request_method: "GET",
+			response_status: 200,
+			response_body: "window.Example = true;",
+			success: 1
+		});
 	});
 });

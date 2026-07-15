@@ -16,14 +16,15 @@ async function saveExternalApiCall(env, entry) {
   try {
     await env.DB.prepare(`
       INSERT INTO external_api_calls (
-        company_id, service, request_started_at, response_received_at, duration_ms,
+        company_id, service, call_source, request_started_at, response_received_at, duration_ms,
         request_method, request_url, request_headers, request_body,
         response_status, response_status_text, response_headers, response_body,
         success, error_name, error_message, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     `).bind(
       Number(entry.companyId) || 0,
       entry.service,
+      entry.callSource || 'backend',
       entry.requestStartedAt,
       entry.responseReceivedAt,
       entry.durationMs,
@@ -51,6 +52,7 @@ export async function externalApiFetch(env, service, companyId, url, init = {}, 
   const baseEntry = {
     companyId,
     service,
+    callSource: 'backend',
     requestStartedAt: startedAt.toISOString(),
     requestMethod,
     requestUrl: String(url),
@@ -93,4 +95,50 @@ export async function externalApiFetch(env, service, companyId, url, init = {}, 
     });
     throw error;
   }
+}
+
+function serializeClientField(value) {
+  if (value === undefined || value === null) return null;
+  if (typeof value === 'string') return value;
+  try { return JSON.stringify(value); }
+  catch { return String(value); }
+}
+
+export async function logFrontendApiCall(env, companyId, payload) {
+  const requestUrl = String(payload?.requestUrl || '');
+  let parsedUrl;
+  try { parsedUrl = new URL(requestUrl); }
+  catch { throw new Error('A valid frontend request URL is required.'); }
+
+  if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+    throw new Error('Only HTTP(S) frontend calls can be logged.');
+  }
+
+  const startedAt = payload.requestStartedAt ? new Date(payload.requestStartedAt) : new Date();
+  const receivedAt = payload.responseReceivedAt ? new Date(payload.responseReceivedAt) : null;
+  if (Number.isNaN(startedAt.getTime()) || (receivedAt && Number.isNaN(receivedAt.getTime()))) {
+    throw new Error('Invalid frontend call timestamp.');
+  }
+
+  await saveExternalApiCall(env, {
+    companyId,
+    service: String(payload.service || parsedUrl.hostname || 'browser'),
+    callSource: 'frontend',
+    requestStartedAt: startedAt.toISOString(),
+    responseReceivedAt: receivedAt?.toISOString() || null,
+    durationMs: Number.isFinite(Number(payload.durationMs)) ? Math.max(0, Math.round(Number(payload.durationMs))) : null,
+    requestMethod: String(payload.requestMethod || 'GET').toUpperCase(),
+    requestUrl,
+    requestHeaders: serializeClientField(payload.requestHeaders),
+    requestBody: serializeClientField(payload.requestBody),
+    responseStatus: payload.responseStatus !== undefined && payload.responseStatus !== null && Number.isInteger(Number(payload.responseStatus))
+      ? Number(payload.responseStatus)
+      : null,
+    responseStatusText: payload.responseStatusText ? String(payload.responseStatusText) : null,
+    responseHeaders: serializeClientField(payload.responseHeaders),
+    responseBody: serializeClientField(payload.responseBody),
+    success: payload.success === true,
+    errorName: payload.errorName ? String(payload.errorName) : null,
+    errorMessage: payload.errorMessage ? String(payload.errorMessage) : null
+  });
 }

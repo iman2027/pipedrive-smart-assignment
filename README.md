@@ -14,7 +14,7 @@ Cloudflare Worker + D1 demo/private Pipedrive app.
 - Gemini-powered company analysis and sales strategy page
 - JWT validation for Pipedrive iframe/panel/modal requests
 - Basic rate limiting with D1
-- Complete outbound API request/response logging in D1 (`external_api_calls`)
+- Complete backend and iframe/browser outbound API logging in D1 (`external_api_calls.call_source`)
 - Admin check for saving settings
 
 ## Required Cloudflare secrets

@@ -1,5 +1,6 @@
 import { getPipedriveUsers } from './pipedrive.js';
 import { buildAssignmentSummary } from './assignment.js';
+import { getFrontendApiLoggerScript } from './frontendApiLogger.js';
 
 async function getInstalledAccount(env, companyId) {
   const row = await env.DB.prepare(`
@@ -76,6 +77,7 @@ export async function getSettingsPage() {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Smart Assignment Settings</title>
+  ${getFrontendApiLoggerScript()}
   <script src="https://cdn.jsdelivr.net/npm/@pipedrive/app-extensions-sdk@0/dist/index.umd.js"></script>
   <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
   <style>
