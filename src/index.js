@@ -6,6 +6,7 @@ import { handleJsonLeadScoringModal, getCustomLeadScoringPage } from './leadScor
 import { getSidebarPage } from './sidebar.js';
 import { getBitcoinJsonPanel } from './bitcoinPanel.js';
 import { getCompanySalesAnalysisPage, handleCompanySalesAnalysis } from './companyAnalysis.js';
+import { getSdkLabPage } from './sdkLab.js';
 import { requirePipedriveAuth, enforceRateLimit, logRequest } from './auth.js';
 import { logFrontendApiCall } from './externalApi.js';
 import {
@@ -49,6 +50,11 @@ export default {
       if (url.pathname === '/company-sales-analysis' && request.method === 'GET') {
         const authContext = await requirePipedriveAuth(request, env);
         return getCompanySalesAnalysisPage(request, authContext);
+      }
+
+      if (url.pathname === '/sdk-lab' && request.method === 'GET') {
+        await requirePipedriveAuth(request, env);
+        return getSdkLabPage();
       }
 
       if (url.pathname === '/json-lead-scoring') {

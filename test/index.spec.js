@@ -119,6 +119,24 @@ describe("Pipedrive Smart Assignment worker", () => {
 		expect(response.status).toBe(401);
 	});
 
+	it("serves the SDK lab only with a valid Pipedrive JWT", async () => {
+		const directResponse = await SELF.fetch("http://example.com/sdk-lab");
+		expect(directResponse.status).toBe(401);
+
+		const token = await createPipedriveToken(765, 432);
+		const url = new URL("http://example.com/sdk-lab");
+		url.searchParams.set("token", token);
+		url.searchParams.set("id", "sdk-lab-test");
+		const response = await SELF.fetch(url);
+		const html = await response.text();
+
+		expect(response.status).toBe(200);
+		expect(response.headers.get("content-type")).toContain("text/html");
+		expect(html).toContain("آزمایشگاه کامل SDK");
+		expect(html).toContain("SHOW_SNACKBAR");
+		expect(html).toContain("PAGE_VISIBILITY_STATE");
+	});
+
 	it("serves the company analysis page only for a matching organization detail context", async () => {
 		const token = await createPipedriveToken(123, 456);
 		const validUrl = new URL("http://example.com/company-sales-analysis");

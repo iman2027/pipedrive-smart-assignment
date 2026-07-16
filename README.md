@@ -12,6 +12,7 @@ Cloudflare Worker + D1 demo/private Pipedrive app.
 - Deal Sidebar / Panel with today's capacity summary
 - Bitcoin JSON Panel
 - Gemini-powered company analysis and sales strategy page
+- Full Pipedrive App Extensions SDK test lab
 - JWT validation for Pipedrive iframe/panel/modal requests
 - Basic rate limiting with D1
 - Complete backend and iframe/browser outbound API logging in D1 (`external_api_calls.call_source`)
@@ -59,6 +60,7 @@ npx wrangler deploy
 - Sidebar iframe: `https://app.loc.ir/sidebar`
 - JSON panel endpoint: `https://app.loc.ir/bitcoin-panel`
 - Organization link action: `https://app.loc.ir/company-sales-analysis`
+- SDK test lab iframe / custom modal: `https://app.loc.ir/sdk-lab`
 
 ## Required Pipedrive scopes
 
@@ -74,3 +76,5 @@ npx wrangler deploy
 After enabling security, direct browser access to iframe/API endpoints should return 401 unless Pipedrive sends a valid JWT token.
 
 Configure the company analysis extension as a Pipedrive **Link** in the **Organization details** location. Set its URL to `https://app.loc.ir/company-sales-analysis` and use the same JWT secret as `PIPEDRIVE_JWT_SECRET`.
+
+Configure the SDK lab as a Pipedrive **Custom Modal** (or another Custom UI extension when testing surface-specific commands). Set its iframe URL to `https://app.loc.ir/sdk-lab` and use the same JWT secret as `PIPEDRIVE_JWT_SECRET`. Commands such as floating-window visibility and modal closing only work in their matching extension type.
