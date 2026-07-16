@@ -135,6 +135,9 @@ describe("Pipedrive Smart Assignment worker", () => {
 		expect(html).toContain("آزمایشگاه کامل SDK");
 		expect(html).toContain("SHOW_SNACKBAR");
 		expect(html).toContain("PAGE_VISIBILITY_STATE");
+		expect(html).toContain("SDK DEBUG CONSOLE");
+		expect(html).toContain("SDK initialization timed out after 10 seconds");
+		expect(html).toContain("UNHANDLED_REJECTION");
 	});
 
 	it("serves the company analysis page only for a matching organization detail context", async () => {
